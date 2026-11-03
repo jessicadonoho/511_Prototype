@@ -4,7 +4,7 @@
 > **Who it's for after that:** Team #5 "Sticky Note" (SI 511, Fall 2026), who will use it for **moderated task-based usability testing** and **five-second tests** with students and early-career developers.
 > **Tagline:** *Learn while you vibe code.* · *From working code to understood code.*
 
----
+----
 
 ## 1. Context (read this first)
 
