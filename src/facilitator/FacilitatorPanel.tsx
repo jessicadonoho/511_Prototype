@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toggleFullscreen, useIsFullscreen } from '../lib/fullscreen'
-import { resetPrototype, useStore, type FixtureName, type LogEvent } from '../store/store'
+import { resetPrototype, startNextSession, useStore, type FixtureName, type LogEvent } from '../store/store'
 
 const FLAG = 'changenotes-facilitator'
 
@@ -55,12 +55,12 @@ export function FacilitatorPanel() {
 
   const [pos, setPos] = useState({ x: 12, y: 2 })
   const [collapsed, setCollapsed] = useState(false)
-  const [confirming, setConfirming] = useState(false)
+  const [confirming, setConfirming] = useState<'next' | 'erase' | null>(null)
   const drag = useRef<{ dx: number; dy: number } | null>(null)
 
   useEffect(() => {
     if (!confirming) return
-    const t = setTimeout(() => setConfirming(false), 4000)
+    const t = setTimeout(() => setConfirming(null), 4000)
     return () => clearTimeout(t)
   }, [confirming])
 
@@ -82,7 +82,8 @@ export function FacilitatorPanel() {
     window.addEventListener('pointerup', up)
   }
 
-  const fileBase = `changenotes-log-${participantId || 'unnamed'}`
+  // The log spans every session since the last erase; each event carries its participant ID.
+  const fileBase = 'changenotes-log-all-sessions'
   const buttonClass = 'rounded border border-[#888] px-1.5 py-0.5 hover:bg-white/10'
 
   return (
@@ -165,10 +166,17 @@ export function FacilitatorPanel() {
           </div>
 
           <button
-            className={`rounded py-1 font-semibold ${confirming ? 'bg-[#c9403a] text-white' : 'border border-[#c9403a] text-[#ffb4af] hover:bg-[#c9403a]/20'}`}
-            onClick={() => (confirming ? resetPrototype() : setConfirming(true))}
+            className={`rounded py-1 font-semibold ${confirming === 'next' ? 'bg-turq text-navy' : 'border border-turq text-turq hover:bg-turq/20'}`}
+            onClick={() => (confirming === 'next' ? startNextSession() : setConfirming('next'))}
           >
-            {confirming ? 'Click again: this also clears the log' : 'Reset prototype'}
+            {confirming === 'next' ? 'Click again: the log is kept' : 'Start next session'}
+          </button>
+
+          <button
+            className={`rounded py-1 font-semibold ${confirming === 'erase' ? 'bg-[#c9403a] text-white' : 'border border-[#c9403a] text-[#ffb4af] hover:bg-[#c9403a]/20'}`}
+            onClick={() => (confirming === 'erase' ? resetPrototype() : setConfirming('erase'))}
+          >
+            {confirming === 'erase' ? 'Click again: this deletes the log' : 'Erase everything'}
           </button>
         </div>
       )}

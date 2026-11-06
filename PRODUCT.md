@@ -292,9 +292,9 @@ Header: logo + "ChangeNotes", the session title ("Session · Nov 2 · Claude Cod
 
 Three tabs:
 1. **Review** (default after a session)
+   - The **Check your understanding** card (Section 5.5) at the top, so it is easily noticed. A config flag and facilitator variant can move it to the bottom.
    - The prompt the user typed (quoted)
    - Change-group cards (label, type, 1–2 sentence "what & why" explanation, Jump to code, Accept/Revert)
-   - The **Check your understanding** card (Section 5.5) at the bottom, or pinned at the top after the user has looked at the changes. Decide which works better and leave a config flag to switch.
 2. **Ask** — chat (Section 5.6). It shows a context chip at the top: "Asking about: library.py · lines 10–17", which updates with the editor selection or cursor. An input with send button, plus suggestion chips.
 3. **History** — searchable prompt history (seed + today). A search box filters by prompt text, file or concept. Each entry shows the date, agent icon/name, prompt, and "+9 −1 · library.py". Clicking one shows that session's change summary (read-only for older ones).
 
@@ -433,7 +433,8 @@ Also provide an index page `#/five-second` listing all screens with Launch butto
 
 - **Facilitator panel:** shown only with `?facilitator=1` (persist the flag in sessionStorage). It is a small draggable floating panel with:
   - Participant ID field (e.g., P6). It is attached to all logged events.
-  - **Reset prototype** (clears the store and reloads to the start state)
+  - **Start next session** (between participants: reloads to the start state and clears the participant ID, keeping the log and variants). The same reset is available without the panel under the side panel's ⋯ → Settings → Reset session.
+  - **Erase everything** (clears the store, including the log, and reloads to the start state)
   - **Jump to state:** Start · After T1 (code generated) · After T4 (questions answered) · Notebook post-session. Use these so the team can test later tasks independently.
   - Variant toggles: question card position (top/bottom), toast on/off, hover cards on/off. These support quick A/B comparisons.
   - **Export log (JSON)** and **Export log (CSV)**

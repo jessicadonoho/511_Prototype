@@ -712,6 +712,12 @@ export const useStore = create<Store>()(
     },
     {
       name: STORE_KEY,
+      version: 1,
+      // Browsers that already ran the prototype saved the old bottom default. Move them to top and keep their log.
+      migrate: (persisted, version) => {
+        const saved = persisted as Persisted
+        return (version < 1 ? { ...saved, variants: { ...saved.variants, questionPosition: 'top' } } : saved) as Store
+      },
       storage: createJSONStorage(() => safeStorage),
       partialize: (s) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -737,12 +743,27 @@ export function logEvent(event: string, payload: Record<string, unknown> = {}) {
   useStore.setState({ events: [...s.events, entry] })
 }
 
-export function resetPrototype() {
-  safeStorage.removeItem(STORE_KEY)
-  // Stop the store from writing itself back before the reload.
+function reloadAtStart() {
+  // Stop the store and any running agent timers from writing to storage before the reload.
   persistPaused = true
   window.location.hash = '#/'
   window.location.reload()
+}
+
+/** Between participants: back to the start state, keeping the log and variant settings. */
+export function startNextSession() {
+  const { task } = useStore.getState()
+  if (task != null) logEvent('task_end', { n: task })
+  logEvent('session_ended')
+  const { variants, events } = useStore.getState()
+  useStore.setState(buildFixture('start', { participantId: '', task: null, variants, events }))
+  reloadAtStart()
+}
+
+/** Erases everything, including the log and variant settings. */
+export function resetPrototype() {
+  safeStorage.removeItem(STORE_KEY)
+  reloadAtStart()
 }
 
 // ---------- Selectors ----------

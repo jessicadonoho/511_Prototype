@@ -37,6 +37,8 @@ Browsers only allow full screen after a click or key press, so a link alone can'
 
 ## Running a test session
 
+**To reset between participants without the facilitator panel:** in the ChangeNotes side panel, click **⋯ → Settings → Reset session**, then click again to confirm. It does the same thing as **Start next session** below. If the side panel is collapsed, click **ChangeNotes** in the status bar to reopen it.
+
 Add `?facilitator=1` to the URL to show the facilitator panel, for example `https://<site>/?facilitator=1`. It stays on for that browser tab, and `?facilitator=0` turns it off. Participants never see it unless the flag is set.
 
 | Tool | What it does |
@@ -45,8 +47,11 @@ Add `?facilitator=1` to the URL to show the facilitator panel, for example `http
 | T1–T10 | Marks a task's start. Click again to end it, so you can compute time on task |
 | Jump to state | Start, After T1, After T4, or Notebook post-session |
 | Variants | Question card position, toast on/off, hover cards on/off |
-| Export log | Downloads the event log as JSON or CSV |
-| Reset prototype | Restores the starting state **and clears the log**, so export first |
+| Export log | Downloads the log for all sessions as JSON or CSV. Filter by `participantId` to split it |
+| Start next session | Use between participants. Restores the starting state and clears the participant ID, but keeps the log and variants |
+| Erase everything | Restores the starting state and default variants **and deletes the log**, so export first |
+
+Both reset buttons need a second click to confirm. They also reload the page, which exits full screen.
 
 The log and all state are stored in this browser's `localStorage` under one key, `changenotes-proto-v1`. Nothing is sent anywhere, so each test machine keeps its own log.
 
@@ -85,7 +90,7 @@ The prototype's "today" is fixed at **Nov 2, 2026**, so dates and countdowns mat
 
 ## Logged events
 
-Each event is `{ts, participantId, task, event, payload}`. Beyond the events in `PRODUCT.md` §9 and §11, the log adds `change_viewed` with `via: 'scroll'` (for when someone finds a change by scrolling), `via: 'notebook'` (from "Open in editor"), `hover_shown_1s`, `chat_response_shown`, `hint_used`, `change_explained`, `change_undo`, and `problem_answered`.
+Each event is `{ts, participantId, task, event, payload}`. Beyond the events in `PRODUCT.md` §9 and §11, the log adds `change_viewed` with `via: 'scroll'` (for when someone finds a change by scrolling), `via: 'notebook'` (from "Open in editor"), `hover_shown_1s`, `chat_response_shown`, `hint_used`, `change_explained`, `change_undo`, `problem_answered`, and `session_ended`.
 
 ## Not built
 

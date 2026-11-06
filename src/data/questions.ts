@@ -50,5 +50,5 @@ export const QUESTIONS: Question[] = [
 export const ADDED_TO_NOTEBOOK = ['Dictionaries: .get() with default', 'sorted() with key', 'Boundary conditions']
 export const ALL_RIGHT_COPY = "Nice. You'll see fewer questions on these concepts next time."
 
-/** Question card placement. Bottom lets people read the changes first; a sticky bar keeps it findable. */
-export const DEFAULT_QUESTION_POSITION: 'top' | 'bottom' = 'bottom'
+/** Question card placement. Top makes it easy to notice; bottom lets people read the changes first. */
+export const DEFAULT_QUESTION_POSITION: 'top' | 'bottom' = 'top'

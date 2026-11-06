@@ -7,7 +7,7 @@ import { SEED_HISTORY, TODAY_SESSION_ID } from '../data/history'
 import { ADDED_TO_NOTEBOOK, ALL_RIGHT_COPY, QUESTIONS } from '../data/questions'
 import { TODAY_LABEL, conceptById } from '../data/courses'
 import { useFrozen } from '../lib/hooks'
-import { correctCount, logEvent, useStore, type ChatMsg } from '../store/store'
+import { correctCount, logEvent, startNextSession, useStore, type ChatMsg } from '../store/store'
 
 export function agentLabel(agent: Parameters<typeof agentById>[0], custom: string) {
   return agent === 'other' ? custom || 'Custom agent' : agentById(agent).short
@@ -22,6 +22,7 @@ export function ChangeNotesPanel({ width }: { width: number }) {
   const stepChange = useStore((s) => s.stepChange)
   const openNotebook = useStore((s) => s.openNotebook)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const sessionDone = phase === 'done'
   const title = sessionDone ? `Session · ${TODAY_LABEL} · ${agentLabel(agent, customAgent)}` : 'No active session'
@@ -47,7 +48,15 @@ export function ChangeNotesPanel({ width }: { width: number }) {
             📓 Notebook ↗
           </button>
           <div className="relative">
-            <PanelIcon label="More options" onClick={() => setMenuOpen(!menuOpen)}>⋯</PanelIcon>
+            <PanelIcon
+              label="More options"
+              onClick={() => {
+                setMenuOpen(!menuOpen)
+                setSettingsOpen(false)
+              }}
+            >
+              ⋯
+            </PanelIcon>
             {menuOpen && (
               <div className="absolute top-6 right-0 z-30 w-36 rounded border border-vs-line bg-[#2d2d30] py-1 text-[12px] shadow-xl" role="menu">
                 <button
@@ -55,11 +64,12 @@ export function ChangeNotesPanel({ width }: { width: number }) {
                   className="block w-full px-3 py-1 text-left hover:bg-[#094771]"
                   onClick={() => {
                     logEvent('dead_click', { target: 'panel_settings' })
-                    setMenuOpen(false)
+                    setSettingsOpen(true)
                   }}
                 >
                   Settings
                 </button>
+                {settingsOpen && <ResetSessionItem />}
                 <button
                   role="menuitem"
                   className="block w-full px-3 py-1 text-left hover:bg-[#094771]"
@@ -110,6 +120,27 @@ export function ChangeNotesPanel({ width }: { width: number }) {
         </button>
       </footer>
     </aside>
+  )
+}
+
+/** The facilitator's reset between participants, tucked under Settings so it stays out of a participant's way. */
+function ResetSessionItem() {
+  const [confirming, setConfirming] = useState(false)
+
+  useEffect(() => {
+    if (!confirming) return
+    const t = setTimeout(() => setConfirming(false), 4000)
+    return () => clearTimeout(t)
+  }, [confirming])
+
+  return (
+    <button
+      role="menuitem"
+      className="block w-full px-3 py-1 text-left text-[11px] text-vs-dim hover:bg-[#094771] hover:text-white"
+      onClick={() => (confirming ? startNextSession() : setConfirming(true))}
+    >
+      {confirming ? 'Click again to reset' : 'Reset session'}
+    </button>
   )
 }
 
