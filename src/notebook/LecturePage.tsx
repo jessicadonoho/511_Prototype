@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CodeBlock, InlineRich, Logo, MasteryDots, highlight } from '../components/common'
 import { ASSIGNMENT } from '../data/assignment'
 import { LEVELS, conceptById, findItem, type Level } from '../data/courses'
@@ -49,10 +49,30 @@ function Section({ section }: { section: LectureSection }) {
   const reps = useStore((s) => (conceptId ? (s.reps[conceptId] ?? 0) : 0))
   const activeConcept = useStore((s) => s.practiceConcept)
   const openPractice = useStore((s) => s.openPractice)
+  const noteFocus = useStore((s) => s.noteFocus)
   const active = Boolean(conceptId) && activeConcept === conceptId
 
+  // "See the notes" on a practice question scrolls here and highlights the section for a beat.
+  const ref = useRef<HTMLElement>(null)
+  const [flash, setFlash] = useState(false)
+  const focused = noteFocus?.sectionId === section.id
+  const nonce = noteFocus?.nonce
+  useEffect(() => {
+    if (!focused) return
+    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setFlash(true)
+    const t = setTimeout(() => setFlash(false), 2600)
+    return () => clearTimeout(t)
+  }, [focused, nonce])
+
   return (
-    <section className="border-t border-line pt-4 first:border-0 first:pt-0">
+    <section
+      ref={ref}
+      id={`note-${section.id}`}
+      className={`scroll-mt-6 rounded-lg border-t border-line pt-4 transition-colors first:border-0 first:pt-0 ${
+        flash ? '-mx-2 bg-turq-soft/50 px-2 pb-2 ring-2 ring-turq-dark' : ''
+      }`}
+    >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h2 className="min-w-0 flex-1 text-[17px] font-extrabold text-ink">{section.heading}</h2>
         {conceptId && (

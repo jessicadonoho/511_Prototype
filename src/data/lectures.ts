@@ -209,3 +209,19 @@ export function conceptsTaught(itemId: string): string[] {
   })
   return out
 }
+
+/**
+ * The lecture section that teaches a concept, so a practice question can link back to the
+ * notes it came from. Prefers the lecture the student is already reading.
+ */
+export function sectionForConcept(
+  conceptId: string,
+  preferItemId?: string,
+): { itemId: string; section: LectureSection } | undefined {
+  const ordered = preferItemId ? [...LECTURES].sort((a, b) => Number(b.itemId === preferItemId) - Number(a.itemId === preferItemId)) : LECTURES
+  for (const lecture of ordered) {
+    const section = lecture.sections.find((s) => s.conceptId === conceptId)
+    if (section) return { itemId: lecture.itemId, section }
+  }
+  return undefined
+}

@@ -33,7 +33,7 @@ const PRACTICE_TURNS = [
   {
     id: 2,
     role: 'question' as const,
-    text: 'The first time `maya` appears, what does `counts.get(user, 0)` return?',
+    text: 'On the last line, what does `counts.get(user, 0)` hand back before the `+ 1` is applied?',
     questionId: 'lq-get-1',
     at: 0,
     instant: true,
@@ -61,7 +61,7 @@ const PRACTICE_TURNS = [
   {
     id: 7,
     role: 'question' as const,
-    text: 'Which dictionary method looks up a key without crashing when the key is missing?',
+    text: 'Which dictionary method fills the blank — the one that looks up a key without crashing when it is missing?',
     questionId: 'lq-get-2',
     at: 0,
     instant: true,
@@ -71,7 +71,7 @@ const PRACTICE_TURNS = [
 function applyScreen(screen: string) {
   // Always use default settings here, so a facilitator's variant toggles can't change the frozen screens.
   const fixture = (name: Parameters<typeof buildFixture>[0], patch: object = {}) =>
-    useStore.setState({ ...buildFixture(name), jump: null, selection: null, newNotebook: null, clipFlash: null, ...patch })
+    useStore.setState({ ...buildFixture(name), jump: null, selection: null, newNotebook: null, clipFlash: null, noteFocus: null, ...patch })
   const defaults = buildFixture('start').variants
   switch (screen) {
     case 'notebook-lecture':

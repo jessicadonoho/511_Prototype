@@ -7,7 +7,7 @@ import { CONCEPTS, SEED_MASTERY, SEED_RECENT, conceptById, type Level } from '..
 import { hoverByToken } from '../data/hovers'
 import { DEFAULT_QUESTION_POSITION, QUESTIONS } from '../data/questions'
 import { SEED_CORRECT, SEED_QUESTIONS, SEED_STREAK } from '../data/progress'
-import { TODAY_LECTURE_ID, conceptsTaught } from '../data/lectures'
+import { TODAY_LECTURE_ID, conceptsTaught, sectionForConcept } from '../data/lectures'
 import {
   LESSON_QUESTIONS,
   REPS_TO_ADVANCE,
@@ -233,6 +233,8 @@ interface Transient {
   newNotebook: null | { preset?: 'midterm' }
   /** Set briefly after a clip is sent, so the notebook can highlight it. */
   clipFlash: string | null
+  /** A lecture section to scroll to and highlight, set when a question links back to the notes. */
+  noteFocus: { sectionId: string; nonce: number } | null
 }
 
 interface Actions {
@@ -300,6 +302,7 @@ interface Actions {
   addClip(clip: Omit<NotebookClip, 'id' | 'at'>): void
   removeClip(id: string): void
   openNotesForConcept(conceptId: string, via: string): void
+  focusNotesSection(conceptId: string, via: string): void
   beginWeekly(): void
   setWeeklyAnswer(taskId: string, text: string): void
   nextWeeklyTask(): void
@@ -652,6 +655,7 @@ export const useStore = create<Store>()(
         selection: null,
         newNotebook: null,
         clipFlash: null,
+        noteFocus: null,
 
         focusApp(app) {
           if (get().frontApp === app) return
@@ -994,6 +998,7 @@ export const useStore = create<Store>()(
             jump: null,
             selection: null,
             clipFlash: null,
+            noteFocus: null,
           })
         },
 
@@ -1292,6 +1297,27 @@ export const useStore = create<Store>()(
           get().openPractice(conceptId, via)
         },
 
+        /**
+         * "See the notes" from a practice question: scroll the lecture to the section that
+         * taught the concept and highlight it, without disturbing the question in the panel.
+         */
+        focusNotesSection(conceptId, via) {
+          const s = get()
+          const current = /\/item\/([^/]+)/.exec(s.notebookRoute)?.[1]
+          const found = sectionForConcept(conceptId, current)
+          if (!found) return
+          const concept = conceptById(conceptId)
+          const route = `/course/${concept?.courseId ?? 'cs120'}/item/${found.itemId}`
+          log('notes_section_focused', { concept: conceptId, section: found.section.id, via })
+          set({
+            frontApp: 'notebook',
+            open: { ...s.open, notebook: true },
+            notebookDot: false,
+            noteFocus: { sectionId: found.section.id, nonce: (s.noteFocus?.nonce ?? 0) + 1 },
+          })
+          if (s.notebookRoute !== route) get().navNotebook(route)
+        },
+
         // ---------- Weekly review (Theme 6) ----------
 
         beginWeekly() {
@@ -1360,7 +1386,7 @@ export const useStore = create<Store>()(
       storage: createJSONStorage(() => safeStorage),
       partialize: (s) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { bounceNonce, jump, cursor, selection, newNotebook, clipFlash, ...rest } = s
+        const { bounceNonce, jump, cursor, selection, newNotebook, clipFlash, noteFocus, ...rest } = s
         return Object.fromEntries(Object.entries(rest).filter(([, v]) => typeof v !== 'function')) as unknown as Store
       },
       onRehydrateStorage: () => (state) => {

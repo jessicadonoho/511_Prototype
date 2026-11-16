@@ -21,7 +21,8 @@ npm run preview   # serve the built site
 
 1. **Onboarding.** A new student joins their class with the code `CS120-F26`, meets the notebook, and sees how it relates to their editor. Skippable; replay it from the facilitator panel.
 2. **The lecture.** The student lands on **CS 120 · L6 Dictionaries**, with lecture notes and a **practice panel docked beside them**.
-3. **Practice loop.** Answer in your own words → scripted LLM feedback → go again. A wrong or near-miss answer keeps you on the same question; a right one moves you to a new one. **Three correct and the panel moves you to the next concept** (`0/3` → `3/3`).
+3. **Practice loop.** Every question is a **card pinned above the answer box**: the question, the code snippet it is about, a link back to the lecture section it came from, and one line saying what to type. It doesn't scroll away while you think — the conversation above it holds your answers and the replies. Answer in your own words → scripted LLM feedback → go again. A wrong or near-miss answer keeps you on the same question; a right one moves you to a new one. **Three correct and the panel moves you to the next concept** (`0/3` → `3/3`).
+   Clicking **Notes: <section>** scrolls the lecture to the section that taught the concept and highlights it, with the question still on screen.
 4. **The in-class assignment.** At the end of the notes, *In-class 6 · Checkout counts*. Opening it asks **"Would you like to review these concepts?"** with the current mastery rating for each, then opens `in_class_6.py` in the editor. The same prompt appears again after submission.
 5. **Stuck?** The editor has a quiet row of links back to the notes for the concepts in the open file. Clicking one brings the notebook forward with the practice panel on that concept.
 6. **AI usage detected.** Pasting four or more lines into the assignment file (or running the terminal agent) flags it. What happens next depends on the variant — see below.
@@ -109,7 +110,7 @@ All copy and seed data live in `src/data/`, so you can change them without touch
 | File | Contents |
 | --- | --- |
 | `lectures.ts` | **Lecture notes**, by lecture and section, and which concept each section teaches |
-| `lessonPractice.ts` | **Practice panel questions**, with scripted feedback for right, near-miss and wrong answers |
+| `lessonPractice.ts` | **Practice panel questions**: prompt, code snippet, what to type, and scripted feedback for right, near-miss and wrong answers |
 | `assignment.ts` | The in-class assignment, its starter file and the AI-written version |
 | `aiDetection.ts` | Option A / Option B copy and the clarifying questions |
 | `weeklyReview.ts` | Weekly review tasks by mastery band, and the professor's class aggregate |
@@ -148,7 +149,7 @@ Each event is `{ts, participantId, task, event, payload}`. Iteration 2 adds:
 | `ai_usage_detected` | `via` (`paste` / `agent_run`), `mode` |
 | `clarify_opened`, `clarify_answered`, `clarify_finished`, `clarify_skipped` | `id`, `ok`, `mode`, `index` |
 | `clip_added`, `clip_removed` | `concept`, `item`, `lines` |
-| `notes_opened_for_concept` | `concept`, `via` |
+| `notes_opened_for_concept`, `notes_section_focused` | `concept`, `section`, `via` |
 | `weekly_review_started`, `weekly_task_answered`, `weekly_review_finished` | `tasks`, `pass`, `passed`, `missed`, `paste_blocked` |
 | `paste_blocked` | `where`, `count` |
 | `support_action` | `kind`, `concept` |
@@ -159,6 +160,7 @@ The iteration 1 events are still logged where those features are still reachable
 
 - **Nothing was deleted, only demoted.** The editor's accept/revert review, its comprehension-question card, hover cards, prompt history, My Notebooks and Today's Lesson all still work. The ChangeNotes panel now starts **collapsed**, its inline labels sit at 55% opacity until you reach for them, and the three demoted notebook pages live under **More** in the sidebar. Use the **Editor AI review** jump to get to the old flow.
 - **Mastery stayed on the 0–4 scale.** The `0/3 → 3/3` reps gate *moving to the next concept in a lesson* only. The 0–4 rating (New → Mastered) still moves with accuracy, as before: Today's Lesson, mixed practice sets, the editor's questions, a good answer to an AI clarifying question, and a passed weekly review task. Both are shown side by side in the lecture's concept strip, with a line explaining the difference.
+- **Every practice question has a code snippet**, and its lines are kept short enough to read in the panel without scrolling sideways. The prompt never restates the code. Writing a new one: keep `prompt` to one question, put the code in `code` (a `____` marks a blank to fill), and use `askFor` for the instruction above the answer box.
 - **Practice answers are free text**, graded against scripted accept strings and expected near-misses. A near-miss gets its own targeted reply and keeps you on the same question — that's the iterative loop. Unrecognised answers fall back to a generic nudge, so a participant never hits a dead end.
 - **AI detection is scripted but real** where it can be: pasting 4+ lines (or >160 characters) into the assignment file genuinely fires it. Running the terminal agent fires it too, so the old editor path still reaches the new flow.
 - **The weekly review uses a plain textarea, not Monaco.** Paste is blocked with `onPaste`/`onDrop`, the blocked count is shown and logged, and "running" the code checks for expected tokens rather than executing anything.

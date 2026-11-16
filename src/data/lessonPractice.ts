@@ -1,9 +1,18 @@
 // Practice questions for the lecture practice panel (Iteration 2, Theme 4).
 //
-// The loop is: the student types an answer, the LLM responds, and it repeats. Answers are
-// free text, so every question carries scripted feedback for a right answer, for the
-// near-misses we expect, and for anything else. A student needs 3 correct answers on a
-// concept before the panel moves them on.
+// The loop is: the student reads a snippet, types an answer, the LLM responds, and it
+// repeats. Answers are free text, so every question carries scripted feedback for a right
+// answer, for the near-misses we expect, and for anything else. A student needs 3 correct
+// answers on a concept before the panel moves them on.
+//
+// Writing a question:
+//   prompt  — one short question. Don't restate the code; the snippet is shown right below.
+//   code    — the snippet the question is about. Every question has one. A `____` marks a
+//             blank to fill, and a trailing comment can show the symptom (`# crashes here`).
+//   askFor  — the instruction directly above the answer box, so a student knows what shape
+//             of answer is wanted ("Type just the value", "Answer in a sentence").
+// The panel links each question back to the lecture section that teaches its concept, so
+// there is nothing a student has to remember to answer it.
 
 export const REPS_TO_ADVANCE = 3
 
@@ -16,7 +25,7 @@ export interface NearMiss {
 export interface LessonQuestion {
   id: string
   conceptId: string
-  /** Shown above the question, so a student knows what kind of answer to give. */
+  /** The instruction shown under the code, directly above the answer box. */
   askFor: string
   prompt: string
   code?: string
@@ -36,9 +45,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-get-1',
     conceptId: 'dictget',
-    askFor: 'Type the value it returns.',
-    prompt: 'The first time `maya` appears, what does `counts.get(user, 0)` return?',
-    code: 'counts = {}\nuser = "maya"\ncounts[user] = counts.get(user, 0) + 1',
+    askFor: 'Type just that value.',
+    prompt: 'On the last line, what does `counts.get(user, 0)` hand back before the `+ 1` is applied?',
+    code: 'counts = {}\nuser = "maya"\n\ncounts[user] = counts.get(user, 0) + 1',
     accept: ['0', 'zero'],
     reject: ['none', 'error', 'keyerror', '10'],
     correctFeedback:
@@ -67,15 +76,16 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-get-2',
     conceptId: 'dictget',
-    askFor: 'Name the method.',
-    prompt: 'Which dictionary method looks up a key without crashing when the key is missing?',
+    askFor: 'Type the method name.',
+    prompt: 'Which dictionary method fills the blank — the one that looks up a key without crashing when it is missing?',
+    code: 'counts = {"sam": 2}\n\nprint(counts["maya"])            # KeyError\nprint(counts.____("maya", 0))    # 0',
     accept: ['.get', 'get('],
     correctFeedback: '`.get` is right. It returns your default instead of raising a `KeyError`.',
     nearMisses: [
       {
         triggers: ['[', 'bracket', 'index'],
         feedback:
-          'Square brackets are the lookup that *does* crash on a missing key. There is a method that takes a fallback value instead. It is four characters long.',
+          'Square brackets are the lookup on the line above — the one that crashes. You want the method that takes a fallback value instead. It is three letters long.',
       },
       {
         triggers: ['keys', 'setdefault', 'has_key', 'in'],
@@ -83,15 +93,15 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
           'Not that one. `in` and `.keys()` can tell you whether a key exists, but we want a single call that returns either the value or a fallback.',
       },
     ],
-    wrongFeedback: 'Not that one. It is the method you used in the counting pattern: `counts.____(user, 0) + 1`.',
+    wrongFeedback: 'Not that one. It is the method from the counting pattern in the notes: `counts.____(user, 0) + 1`.',
     hint: 'It appears in the counting pattern from the notes: `counts.____(user, 0) + 1`.',
   },
   {
     id: 'lq-get-3',
     conceptId: 'dictget',
-    askFor: 'Type the output.',
+    askFor: 'Type what appears in the output.',
     prompt: 'What does this print?',
-    code: 'stock = {"pens": 4}\nprint(stock.get("ink", 0))',
+    code: 'stock = {"pens": 4}\n\nprint(stock.get("ink", 0))',
     accept: ['0', 'zero'],
     reject: ['none', 'keyerror', '40'],
     correctFeedback: '`0` is right. `"ink"` is not a key in `stock`, so `.get` returns the default.',
@@ -116,9 +126,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-get-4',
     conceptId: 'dictget',
-    askFor: 'Say what goes wrong.',
-    prompt: 'Why does this crash on the very first record?',
-    code: 'counts = {}\nfor record in records:\n    counts[record["user"]] += 1',
+    askFor: 'Answer in a sentence. Naming the error is enough.',
+    prompt: 'The very first record crashes this loop. Why?',
+    code: 'counts = {}\n\nfor record in records:\n    user = record["user"]\n    counts[user] += 1   # crashes here',
     accept: ['keyerror', 'key error', "doesn't exist", 'does not exist', 'not in', 'missing', 'no value', 'empty', 'nothing to add'],
     correctFeedback:
       'Exactly. `counts` starts empty, so there is no existing value to add `1` to, and `counts[key] += 1` raises a `KeyError`. `counts.get(key, 0) + 1` starts a new user at `0` instead.',
@@ -140,9 +150,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-get-5',
     conceptId: 'dictget',
-    askFor: 'Type the finished line.',
-    prompt: 'Rewrite this line so a brand new user starts at zero instead of crashing.',
-    code: 'counts[user] += 1',
+    askFor: 'Type the replacement line.',
+    prompt: 'Rewrite the marked line so a user you have never seen starts at zero instead of crashing.',
+    code: 'counts = {}\n\nfor user in users:\n    counts[user] += 1   # rewrite this line',
     accept: ['get(user, 0) + 1', 'get(user,0) + 1', 'get(user, 0)+1', 'get(user,0)+1'],
     correctFeedback:
       'That is the counting pattern: `counts[user] = counts.get(user, 0) + 1`. A new user comes back as `0`, and an existing one comes back as their running total.',
@@ -166,9 +176,10 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-items-1',
     conceptId: 'dictitems',
-    askFor: 'Say what you get back.',
-    prompt: 'What does `.items()` give you for `{"maya": 3}`?',
-    accept: ['pair', 'key and value', 'keys and values', 'key, value', 'both', 'tuple', '("maya", 3)', 'maya", 3'],
+    askFor: 'Describe it in a few words, or type one pair exactly as it would print.',
+    prompt: 'What does each `pair` hold?',
+    code: 'counts = {"maya": 3}\n\nfor pair in counts.items():\n    print(pair)',
+    accept: ['pair', 'key and value', 'keys and values', 'key, value', 'both', 'tuple', "'maya', 3", '"maya", 3'],
     correctFeedback: 'Right — each key and value together as a pair, like `("maya", 3)`. That is why the name stays attached to its count.',
     nearMisses: [
       {
@@ -186,9 +197,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-items-2',
     conceptId: 'dictitems',
-    askFor: 'Type the output.',
+    askFor: 'Type both lines of output.',
     prompt: 'What does this print?',
-    code: 'counts = {"maya": 3, "sam": 1}\nfor name, count in counts.items():\n    print(name, count)',
+    code: 'counts = {"maya": 3, "sam": 1}\n\nfor name, count in counts.items():\n    print(name, count)',
     accept: ['maya 3\nsam 1', 'maya 3 sam 1', 'maya3sam1', 'maya 3, sam 1'],
     correctFeedback: 'Right. Two lines: `maya 3` then `sam 1`. The loop unpacks each pair into `name` and `count`.',
     nearMisses: [
@@ -211,8 +222,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-items-3',
     conceptId: 'dictitems',
-    askFor: 'Name the method.',
-    prompt: 'You want to sort users by their count, highest first. Which method gets the names and counts out of the dictionary together?',
+    askFor: 'Type the method name.',
+    prompt: 'You want users ranked by count, highest first. Which method fills the blank, so each name travels with its count?',
+    code: 'counts = {"maya": 3, "sam": 1}\n\nranked = sorted(\n    counts.____(),\n    key=lambda pair: pair[1],\n    reverse=True,\n)',
     accept: ['.items', 'items('],
     correctFeedback: '`.items()` is right. Sorting the pairs keeps each name attached to its count, which is exactly what a ranking needs.',
     nearMisses: [
@@ -226,19 +238,20 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
       },
       {
         triggers: ['sorted', 'sort'],
-        feedback: '`sorted` does the ordering, yes — but the question is what you hand *to* `sorted`. Which dictionary method produces pairs?',
+        feedback: '`sorted` is already there, doing the ordering. The blank is what you hand *to* it. Which dictionary method produces pairs?',
       },
     ],
     wrongFeedback: 'Not that one. There is a method that gives you pairs, so the name and the count travel together into `sorted`.',
-    hint: 'You will pass the result straight into `sorted(...)`, so each name has to stay with its count.',
+    hint: 'The `key=` line reads `pair[1]`, so whatever fills the blank has to produce pairs.',
   },
 
   // ---------- Boundary conditions ----------
   {
     id: 'lq-bound-1',
     conceptId: 'boundary',
-    askFor: 'Type the comparison.',
-    prompt: 'Which comparison counts a book due **today** as overdue?',
+    askFor: 'Type just the operator.',
+    prompt: 'Which comparison fills the blank, so a book due **today** counts as overdue?',
+    code: 'today = "2026-11-02"\n\nif book["due"] ____ today:\n    print("overdue")',
     accept: ['<=', 'less than or equal'],
     reject: ['>='],
     correctFeedback: '`<=` is right. The `=` includes the boundary, so a due date equal to today counts as overdue.',
@@ -258,9 +271,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-bound-2',
     conceptId: 'boundary',
-    askFor: 'Type the output.',
+    askFor: 'Type both values, separated by a space.',
     prompt: 'What does this print?',
-    code: 'score = 90\nprint(score > 90, score >= 90)',
+    code: 'score = 90\n\nprint(score > 90, score >= 90)',
     accept: ['false true', 'false, true'],
     correctFeedback: 'Right — `False True`. `>` leaves 90 out, `>=` includes it. Same number, different answer.',
     nearMisses: [
@@ -283,9 +296,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-bound-3',
     conceptId: 'boundary',
-    askFor: 'Say what goes wrong.',
-    prompt: 'This should print each item, but it crashes on the last pass. What is wrong?',
-    code: 'items = ["a", "b", "c"]\nfor i in range(len(items) + 1):\n    print(items[i])',
+    askFor: 'Answer in a sentence, or point at the part that is wrong.',
+    prompt: 'This prints `a`, `b`, `c` and then crashes. What is wrong?',
+    code: 'items = ["a", "b", "c"]\n\nfor i in range(len(items) + 1):\n    print(items[i])   # IndexError here',
     accept: ['+ 1', '+1', 'one too', 'too far', 'past the end', 'out of range', 'off by one', 'index error', 'indexerror', 'extra'],
     correctFeedback:
       'Exactly. `range(len(items) + 1)` produces `0, 1, 2, 3`, but the last valid index is `2`, so `items[3]` raises an `IndexError`. Drop the `+ 1`.',
@@ -308,34 +321,36 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-sorted-1',
     conceptId: 'sortedkey',
-    askFor: 'Type the argument.',
-    prompt: 'Which argument makes `sorted` put the highest count first?',
+    askFor: 'Type the keyword that goes in the blank.',
+    prompt: 'Which argument fills the blank, so the highest count comes first?',
+    code: 'counts = {"maya": 3, "sam": 1}\n\nranked = sorted(\n    counts.items(),\n    key=lambda pair: pair[1],\n    ____=True,\n)',
     accept: ['reverse'],
     correctFeedback: '`reverse=True` is right. Without it, `sorted` runs lowest to highest.',
     nearMisses: [
       {
         triggers: ['key'],
-        feedback: '`key` says *what* to sort by, not which direction. There is a separate argument for the direction.',
+        feedback: '`key` is already on the line — it says *what* to sort by, not which direction. The blank is the one that flips the order.',
       },
       {
         triggers: ['desc', 'descending', 'high'],
         feedback: 'Right idea, but that is not Python\'s name for it. The keyword is a single English word meaning "flip the order".',
       },
     ],
-    wrongFeedback: 'Not that one. `sorted` takes three things here: the items, `key=`, and one more argument that flips the direction.',
-    hint: 'Fill in: `sorted(pairs, key=..., ____=True)`',
+    wrongFeedback: 'Not that one. `sorted` is being given three things here: the pairs, `key=`, and one more argument that flips the direction.',
+    hint: 'It is one word, and it means the opposite of the default order.',
   },
   {
     id: 'lq-sorted-2',
     conceptId: 'sortedkey',
-    askFor: 'Say what happens to the original list.',
-    prompt: 'After you call `sorted(nums)`, what has happened to `nums` itself?',
-    accept: ["doesn't change", 'does not change', 'unchanged', 'same', 'nothing', 'not modified', 'untouched', 'new list'],
-    correctFeedback: 'Right. `sorted` returns a new list and leaves the original as it was. `nums.sort()` is the one that reorders in place.',
+    askFor: 'Answer in a few words, or type what the last line prints.',
+    prompt: 'What has `sorted` done to `nums` itself?',
+    code: 'nums = [3, 1, 2]\n\nlow_to_high = sorted(nums)\nprint(nums)',
+    accept: ["doesn't change", 'does not change', 'unchanged', 'same', 'nothing', 'not modified', 'untouched', 'new list', '[3, 1, 2]', '[3,1,2]', '3, 1, 2'],
+    correctFeedback: 'Right. `nums` still prints `[3, 1, 2]`. `sorted` returns a new list and leaves the original as it was — `nums.sort()` is the one that reorders in place.',
     nearMisses: [
       {
-        triggers: ['sorted too', 'gets sorted', 'is sorted', 'reordered'],
-        feedback: 'That is what `nums.sort()` does. `sorted(nums)` is the other of the pair — it hands something back rather than changing what you gave it.',
+        triggers: ['sorted too', 'gets sorted', 'is sorted', 'reordered', '[1, 2, 3]', '[1,2,3]'],
+        feedback: 'That is what `nums.sort()` would do. `sorted(nums)` is the other of the pair — it hands something back rather than changing what you gave it. So what does `print(nums)` show?',
       },
       {
         triggers: ['empty', 'deleted'],
@@ -343,14 +358,14 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
       },
     ],
     wrongFeedback: 'Not quite. Python has two ways to sort: `nums.sort()` changes `nums`, and `sorted(nums)` does something different. What does `sorted` give you back?',
-    hint: 'Python has `nums.sort()` and `sorted(nums)`. What is the difference between them?',
+    hint: 'Python has `nums.sort()` and `sorted(nums)`. Only one of them changes the list you pass in.',
   },
   {
     id: 'lq-sorted-3',
     conceptId: 'sortedkey',
-    askFor: 'Type the output.',
+    askFor: 'Type the list, in order.',
     prompt: 'What does this print?',
-    code: 'words = ["kiwi", "fig", "banana"]\nprint(sorted(words, key=len))',
+    code: 'words = ["kiwi", "fig", "banana"]\n\nprint(sorted(words, key=len))',
     accept: ['fig', "['fig', 'kiwi', 'banana']"],
     reject: ['banana\', \'fig', 'banana", "fig'],
     correctFeedback: "Right: `['fig', 'kiwi', 'banana']`. `key=len` sorts by length, so the shortest word comes first.",
@@ -372,8 +387,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-lambda-1',
     conceptId: 'lambda',
-    askFor: 'Say what it returns.',
-    prompt: 'What does `lambda pair: pair[1]` give you when called with `("maya", 3)`?',
+    askFor: 'Type just the value.',
+    prompt: 'What does this print?',
+    code: 'get_count = lambda pair: pair[1]\n\nprint(get_count(("maya", 3)))',
     accept: ['3', 'the count', 'second', 'value'],
     reject: ['maya'],
     correctFeedback: 'Right — `3`. It takes the pair and returns index `1`, the second item, which is the count.',
@@ -393,9 +409,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-lambda-2',
     conceptId: 'lambda',
-    askFor: 'Type the output.',
+    askFor: 'Type just the number.',
     prompt: 'What does this print?',
-    code: 'double = lambda x: x * 2\nprint(double(4))',
+    code: 'double = lambda x: x * 2\n\nprint(double(4))',
     accept: ['8'],
     correctFeedback: '`8` is right. The lambda is an ordinary function — it just has no name of its own.',
     nearMisses: [
@@ -414,9 +430,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-lambda-3',
     conceptId: 'lambda',
-    askFor: 'Say why.',
-    prompt: 'Why would you write a `lambda` instead of a normal `def` function here?',
-    code: 'ranked = sorted(counts.items(), key=lambda pair: pair[1], reverse=True)',
+    askFor: 'Answer in a sentence.',
+    prompt: 'A named `def get_count(pair)` would work here too. Why is a `lambda` a reasonable choice instead?',
+    code: 'counts = {"maya": 3, "sam": 1}\n\nranked = sorted(\n    counts.items(),\n    key=lambda pair: pair[1],\n    reverse=True,\n)',
     accept: ['once', 'one line', 'inline', 'short', 'small', 'no name', 'only need', 'single use', 'right there', 'single place'],
     correctFeedback:
       'Right. It is needed in exactly one place, so giving it a name and two more lines would not buy you anything. For anything longer or reused, a `def` is clearer.',
@@ -439,9 +455,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-for-1',
     conceptId: 'forloops',
-    askFor: 'Type the output.',
+    askFor: 'Type just the number.',
     prompt: 'What does this print?',
-    code: 'total = 0\nfor n in [1, 2, 3]:\n    total += n\nprint(total)',
+    code: 'total = 0\n\nfor n in [1, 2, 3]:\n    total += n\n\nprint(total)',
     accept: ['6'],
     correctFeedback: '`6` is right. The loop adds 1, then 2, then 3, keeping the running total between passes.',
     nearMisses: [
@@ -460,9 +476,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-for-2',
     conceptId: 'forloops',
-    askFor: 'Say what goes wrong.',
-    prompt: 'This should sum every grade, but it always returns the last one. What is wrong?',
-    code: 'for grade in grades:\n    total = 0\n    total += grade',
+    askFor: 'Answer in a sentence. Naming the line and where it belongs is enough.',
+    prompt: 'This should add up every grade, but it ends up with only the last one. Which line is in the wrong place?',
+    code: 'grades = [90, 80, 70]\n\nfor grade in grades:\n    total = 0\n    total += grade\n\nprint(total)   # 70, not 240',
     accept: ['inside', 'reset', 'resets', 'each time', 'every pass', 'every time', 'before the loop', 'outside', 'in the loop'],
     correctFeedback: 'Exactly. `total = 0` runs on every pass, wiping the running total. Move it above the loop so it is set just once.',
     nearMisses: [
@@ -483,7 +499,7 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-comp-1',
     conceptId: 'listcomp',
-    askFor: 'Type the output.',
+    askFor: 'Type the list.',
     prompt: 'What does this print?',
     code: 'print([n * 2 for n in [1, 2, 3] if n > 1])',
     accept: ['[4, 6]', '[4,6]', '4, 6', '4 6'],
@@ -505,21 +521,22 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-comp-2',
     conceptId: 'listcomp',
-    askFor: 'Type the keyword.',
-    prompt: 'Which keyword filters a comprehension down to only the matching items?',
+    askFor: 'Type the keyword that goes in the blank.',
+    prompt: 'Which keyword fills the blank, so only the books that are actually overdue end up in the list?',
+    code: 'books = [{"due": "2026-11-01"},\n         {"due": "2026-12-09"}]\n\noverdue = [\n    b for b in books ____ b["due"] <= today\n]',
     accept: ['if'],
-    correctFeedback: '`if` is right. It goes at the end: `[b for b in books if b["due"] <= today]`.',
+    correctFeedback: '`if` is right. It goes on the end of the comprehension, after the `for` part.',
     nearMisses: [
       {
         triggers: ['for'],
-        feedback: '`for` is what walks the sequence. The filtering is a separate keyword that comes after it.',
+        feedback: '`for` is already there — it is what walks the list. The filtering is a separate keyword that comes after it.',
       },
       {
         triggers: ['where', 'filter', 'when'],
         feedback: 'That is the idea, but not Python\'s word for it. It is the same keyword you use for an ordinary condition.',
       },
     ],
-    wrongFeedback: 'Not that one. It is the same two-letter keyword you use for a normal condition.',
+    wrongFeedback: 'Not that one. It is the same two-letter keyword you use to write a plain condition.',
     hint: 'It is the same keyword you use to write a plain condition.',
   },
 
@@ -527,9 +544,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-if-1',
     conceptId: 'ifelif',
-    askFor: 'Type the output.',
+    askFor: 'Type what appears in the output.',
     prompt: 'What does this print?',
-    code: 'pct = 85\nif pct >= 80:\n    print("B")\nelif pct >= 70:\n    print("C")',
+    code: 'pct = 85\n\nif pct >= 80:\n    print("B")\nelif pct >= 70:\n    print("C")',
     accept: ['b'],
     reject: ['b and c', 'bc', 'b, c'],
     correctFeedback: 'Just `B`. Python stops at the first true condition, so the `elif` is never even checked.',
@@ -553,8 +570,9 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-bool-1',
     conceptId: 'boolops',
-    askFor: 'Type True or False.',
-    prompt: 'What is `True and False`?',
+    askFor: 'Type `True` or `False`.',
+    prompt: 'What does this print?',
+    code: 'print(True and False)',
     accept: ['false'],
     reject: ['true'],
     correctFeedback: '`False` is right. `and` needs both sides to be true.',
@@ -570,7 +588,7 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-slice-1',
     conceptId: 'slicing',
-    askFor: 'Type the output.',
+    askFor: 'Type the list.',
     prompt: 'What does this print?',
     code: 'print([5, 4, 3, 2][:2])',
     accept: ['[5, 4]', '[5,4]', '5, 4', '5 4'],
@@ -591,10 +609,11 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
   {
     id: 'lq-csv-1',
     conceptId: 'csvread',
-    askFor: 'Say what you get per row.',
-    prompt: 'What does `csv.DictReader` give you for each row of a file?',
+    askFor: 'Answer in a few words.',
+    prompt: 'What kind of thing is `row` on each pass through this loop?',
+    code: 'import csv\n\nwith open("checkouts.csv") as f:\n    for row in csv.DictReader(f):\n        print(row["title"])',
     accept: ['dict', 'dictionary', 'keyed', 'column name', 'header'],
-    correctFeedback: 'Right — a dictionary keyed by the column names from the header row, so you can write `row["title"]`.',
+    correctFeedback: 'Right — a dictionary keyed by the column names from the header row, which is why `row["title"]` works.',
     nearMisses: [
       {
         triggers: ['list'],
@@ -606,7 +625,7 @@ export const LESSON_QUESTIONS: LessonQuestion[] = [
       },
     ],
     wrongFeedback: 'Not quite. The name is `DictReader`, and it uses the header row for something. What does each row become?',
-    hint: 'The clue is in the name: `DictReader`.',
+    hint: 'The clue is in the name: `DictReader`. And look at how `row` is indexed on the last line.',
   },
 ]
 

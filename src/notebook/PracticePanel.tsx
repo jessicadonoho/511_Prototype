@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CodeBlock, InlineRich, Logo, RichText } from '../components/common'
 import { LEVELS, conceptById, type Level } from '../data/courses'
-import { conceptsTaught } from '../data/lectures'
+import { conceptsTaught, sectionForConcept } from '../data/lectures'
 import { LESSON_QUESTIONS, REPS_TO_ADVANCE } from '../data/lessonPractice'
 import { useStore, type PracticeTurn } from '../store/store'
 
@@ -64,7 +64,12 @@ function Coach({ turn }: { turn: PracticeTurn }) {
   )
 }
 
-function Turn({ turn }: { turn: PracticeTurn }) {
+/**
+ * The transcript above the input. The question a student is answering right now is *not*
+ * here — it lives in the pinned card next to the answer box, so it can't scroll away.
+ * Questions already answered stay in the transcript as a quiet divider.
+ */
+function Turn({ turn, current }: { turn: PracticeTurn; current: boolean }) {
   if (turn.role === 'student') {
     return (
       <div className="ml-6 self-end rounded-lg rounded-br-sm bg-navy px-2.5 py-1.5 text-[13px] leading-snug whitespace-pre-wrap text-white">
@@ -73,19 +78,20 @@ function Turn({ turn }: { turn: PracticeTurn }) {
     )
   }
   if (turn.role === 'question') {
+    if (current) return null
     return (
-      <div className="rounded-lg border-2 border-turq bg-turq-soft/50 p-2.5">
-        <div className="mb-1 text-[10.5px] font-bold tracking-wide text-turq-dark uppercase">Question</div>
-        <p className="text-[13.5px] leading-snug font-semibold text-ink">
+      <div className="flex items-baseline gap-1.5 pt-1 text-[11.5px] text-ink-soft">
+        <span className="font-bold tracking-wide uppercase">Asked</span>
+        <span className="min-w-0 flex-1 italic">
           <InlineRich text={turn.text} theme="light" />
-        </p>
+        </span>
       </div>
     )
   }
   return <Coach turn={turn} />
 }
 
-export function PracticePanel({ itemId, width = 332 }: { itemId: string; width?: number }) {
+export function PracticePanel({ itemId, width = 360 }: { itemId: string; width?: number }) {
   const open = useStore((s) => s.practiceOpen)
   const conceptId = useStore((s) => s.practiceConcept)
   const questionId = useStore((s) => s.practiceQuestionId)
@@ -104,11 +110,8 @@ export function PracticePanel({ itemId, width = 332 }: { itemId: string; width?:
   const close = useStore((s) => s.closePractice)
 
   const scroller = useRef<HTMLDivElement>(null)
-  const input = useRef<HTMLTextAreaElement>(null)
   const taught = conceptsTaught(itemId)
   const concept = conceptId ? conceptById(conceptId) : null
-  // The turn object itself is stable, so selecting the last question turn is safe.
-  const question = useStore((s) => lastQuestionTurn(s.practiceTurns))
   const currentReps = conceptId ? (reps[conceptId] ?? 0) : 0
   const allDone = taught.length > 0 && taught.every((id) => advanced.includes(id))
 
@@ -195,22 +198,22 @@ export function PracticePanel({ itemId, width = 332 }: { itemId: string; width?:
           </p>
         )}
         {turns.map((t) => (
-          <Turn key={t.id} turn={t} />
+          <Turn key={t.id} turn={t} current={t.role === 'question' && t.questionId === questionId} />
         ))}
-        {questionId && question?.questionId === questionId && <QuestionAside questionId={questionId} />}
       </div>
 
-      <div className="shrink-0 border-t border-line bg-white p-2.5">
+      <div className="shrink-0 border-t border-line bg-white">
         {questionId ? (
           <>
+            <QuestionCard questionId={questionId} itemId={itemId} />
             <form
+              className="px-2.5 pt-2 pb-2.5"
               onSubmit={(e) => {
                 e.preventDefault()
                 submit(draft)
               }}
             >
               <textarea
-                ref={input}
                 value={draft}
                 rows={2}
                 onChange={(e) => setDraft(e.target.value)}
@@ -251,25 +254,31 @@ export function PracticePanel({ itemId, width = 332 }: { itemId: string; width?:
               </div>
             </form>
           </>
-        ) : allDone ? (
-          <div className="text-center">
-            <p className="text-[13px] font-bold text-ink">Every concept in this lecture is at {REPS_TO_ADVANCE}/{REPS_TO_ADVANCE} 🎉</p>
-            <p className="mt-0.5 text-[12px] text-ink-soft">Your next lecture's questions will build on these.</p>
-          </div>
-        ) : conceptId ? (
-          <button
-            className="w-full rounded-lg bg-turq px-3 py-2 text-[13px] font-bold text-navy hover:bg-[#25b0a3]"
-            onClick={advance}
-          >
-            Next concept →
-          </button>
         ) : (
-          <button
-            className="w-full rounded-lg bg-turq px-3 py-2 text-[13px] font-bold text-navy hover:bg-[#25b0a3]"
-            onClick={() => openPractice(taught[0], 'panel_start')}
-          >
-            Start practising
-          </button>
+          <div className="p-2.5">
+            {allDone ? (
+              <div className="text-center">
+                <p className="text-[13px] font-bold text-ink">
+                  Every concept in this lecture is at {REPS_TO_ADVANCE}/{REPS_TO_ADVANCE} 🎉
+                </p>
+                <p className="mt-0.5 text-[12px] text-ink-soft">Your next lecture's questions will build on these.</p>
+              </div>
+            ) : conceptId ? (
+              <button
+                className="w-full rounded-lg bg-turq px-3 py-2 text-[13px] font-bold text-navy hover:bg-[#25b0a3]"
+                onClick={advance}
+              >
+                Next concept →
+              </button>
+            ) : (
+              <button
+                className="w-full rounded-lg bg-turq px-3 py-2 text-[13px] font-bold text-navy hover:bg-[#25b0a3]"
+                onClick={() => openPractice(taught[0], 'panel_start')}
+              >
+                Start practising
+              </button>
+            )}
+          </div>
         )}
       </div>
     </aside>
@@ -279,21 +288,54 @@ export function PracticePanel({ itemId, width = 332 }: { itemId: string; width?:
 // Built once; the question bank is static.
 const LESSON_LOOKUP = new Map(LESSON_QUESTIONS.map((q) => [q.id, q] as const))
 
-function lastQuestionTurn(turns: PracticeTurn[]): PracticeTurn | undefined {
-  for (let i = turns.length - 1; i >= 0; i--) {
-    if (turns[i].role === 'question') return turns[i]
-  }
-  return undefined
-}
-
-/** The code a question refers to, kept near the input rather than scrolling away with the prompt. */
-function QuestionAside({ questionId }: { questionId: string }) {
+/**
+ * The question being answered, pinned directly above the answer box: the prompt, the code it
+ * is about, a link to the lecture section it came from, and the instruction for what to type.
+ * None of it scrolls away while the student is thinking.
+ */
+function QuestionCard({ questionId, itemId }: { questionId: string; itemId: string }) {
   const q = LESSON_LOOKUP.get(questionId)
+  const focusNotes = useStore((s) => s.focusNotesSection)
   if (!q) return null
+  const notes = sectionForConcept(q.conceptId, itemId)
+
   return (
-    <div>
-      {q.code && <CodeBlock code={q.code} language={q.language === 'sql' ? 'sql' : 'python'} />}
-      <p className="mt-1 text-[11.5px] text-ink-soft">{q.askFor}</p>
+    <div className="border-b border-line bg-turq-soft/40 px-2.5 py-2">
+      <div className="flex items-baseline gap-2">
+        <span className="text-[10.5px] font-bold tracking-wide text-turq-dark uppercase">Question</span>
+        <span className="flex-1" />
+        {notes && (
+          <button
+            className="flex min-w-0 max-w-[68%] items-baseline gap-1 text-[11.5px] font-semibold text-turq-dark hover:text-ink"
+            title={`Jump to the notes: ${notes.section.heading}`}
+            onClick={() => focusNotes(q.conceptId, 'question_card')}
+          >
+            <span className="truncate underline underline-offset-2">Notes: {notes.section.heading}</span>
+            <span aria-hidden="true">↗</span>
+          </button>
+        )}
+      </div>
+
+      <p className="mt-1 text-[13.5px] leading-snug font-semibold text-ink">
+        <InlineRich text={q.prompt} theme="light" />
+      </p>
+
+      {q.code && (
+        <CodeBlock
+          code={q.code}
+          language={q.language === 'sql' ? 'sql' : 'python'}
+          className="code-snippet mt-1.5"
+        />
+      )}
+
+      <p className="mt-1.5 flex items-baseline gap-1 text-[11.5px] text-ink-soft">
+        <span aria-hidden="true" className="font-bold text-turq-dark">
+          ↓
+        </span>
+        <span className="min-w-0 flex-1">
+          <InlineRich text={q.askFor} theme="light" />
+        </span>
+      </p>
     </div>
   )
 }

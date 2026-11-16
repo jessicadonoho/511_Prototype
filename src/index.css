@@ -259,3 +259,10 @@ button:disabled {
   color: #fff;
   text-decoration-color: #fff;
 }
+
+/* Question snippets keep their indentation rather than wrapping, since the answer often
+   depends on which line a statement sits on. They scroll sideways in the narrow panel. */
+.code-snippet {
+  white-space: pre;
+  overflow-wrap: normal;
+}
