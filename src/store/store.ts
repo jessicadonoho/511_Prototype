@@ -3,20 +3,45 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 import { AGENT_SCRIPT, agentById, changeById, type AgentId } from '../data/changes'
 import { EDIT_FRAMES, NO_DECISIONS, type ChangeId, type Decisions } from '../data/code'
 import { matchIntent, FALLBACK_INTRO } from '../data/chat'
-import { CONCEPTS, SEED_MASTERY, SEED_RECENT, type Level } from '../data/courses'
+import { CONCEPTS, SEED_MASTERY, SEED_RECENT, conceptById, type Level } from '../data/courses'
 import { hoverByToken } from '../data/hovers'
 import { DEFAULT_QUESTION_POSITION, QUESTIONS } from '../data/questions'
 import { SEED_CORRECT, SEED_QUESTIONS, SEED_STREAK } from '../data/progress'
+import { TODAY_LECTURE_ID, conceptsTaught } from '../data/lectures'
+import {
+  LESSON_QUESTIONS,
+  REPS_TO_ADVANCE,
+  gradeResponse,
+  questionsForConcept,
+  type Grade,
+  type LessonQuestion,
+} from '../data/lessonPractice'
+import { ASSIGNMENT } from '../data/assignment'
+import { CLARIFY_QUESTIONS, type AiMode } from '../data/aiDetection'
+import { REVIEW_TASKS, WEEKLY_REVIEW, tasksForMastery } from '../data/weeklyReview'
+import { STUCK_AFTER, type SignalKind } from '../data/support'
 
 export const STORE_KEY = 'changenotes-proto-v1'
 export const DEFAULT_PROMPT = 'Add a function that finds the top 3 users with the most checkouts.'
+
+/** Where a student starts: today's lecture in the notebook. */
+export const TODAY_LECTURE_ROUTE = `/course/cs120/item/${TODAY_LECTURE_ID}`
 
 export type AppId = 'ide' | 'notebook'
 export type SidebarView = 'explorer' | 'search' | 'scm' | 'extensions' | 'changenotes'
 export type PanelTab = 'review' | 'ask' | 'history'
 export type BottomTab = 'terminal' | 'problems' | 'output'
 export type ChangeVia = 'gutter' | 'lens' | 'sidebar' | 'nav' | 'diff' | 'panel' | 'scroll' | 'notebook'
-export type NotebookVia = 'statusbar' | 'panel_header' | 'panel_footer' | 'panel_idle' | 'summary_card' | 'dock'
+export type NotebookVia =
+  | 'statusbar'
+  | 'panel_header'
+  | 'panel_footer'
+  | 'panel_idle'
+  | 'summary_card'
+  | 'dock'
+  | 'ide_notes'
+  | 'after_submit'
+  | 'onboarding'
 
 export interface TermLine {
   kind: 'shell' | 'agent' | 'prompt' | 'output' | 'done' | 'changenotes' | 'muted'
@@ -60,11 +85,48 @@ export interface Variants {
   questionPosition: 'top' | 'bottom'
   toast: boolean
   hoverCards: boolean
+  /** Which AI-detection option this participant sees (Iteration 2, flow step 5). */
+  aiMode: AiMode
 }
 export interface MasteryChange {
   conceptId: string
   from: Level
   to: Level
+}
+
+/** One line of the practice panel's conversation. */
+export interface PracticeTurn {
+  id: number
+  role: 'question' | 'student' | 'coach'
+  text: string
+  questionId?: string
+  grade?: Grade
+  at: number
+  /** Skips the typing animation (restored turns and the opening question). */
+  instant?: boolean
+}
+
+/** Code a student sent from the editor to a lecture in the notebook. */
+export interface NotebookClip {
+  id: string
+  code: string
+  conceptId: string
+  itemId: string
+  file: string
+  lines: string
+  at: number
+}
+
+export interface ClarifyAnswer {
+  text: string
+  ok: boolean
+}
+
+export interface SupportSignal {
+  kind: SignalKind
+  conceptId: string
+  /** What set this signal off, shown to the student. */
+  detail: string
 }
 
 export interface Persisted {
@@ -112,6 +174,55 @@ export interface Persisted {
   task: number | null
   variants: Variants
   events: LogEvent[]
+
+  // ---------- Iteration 2 ----------
+  /** Onboarding is shown until a student joins their class and finishes the three steps. */
+  onboarded: boolean
+  /** The lecture practice panel (Theme 4). */
+  practiceOpen: boolean
+  practiceConcept: string | null
+  practiceQuestionId: string | null
+  practiceAsked: string[]
+  practiceTurns: PracticeTurn[]
+  practiceDraft: string
+  /** Correct answers so far on each concept, out of REPS_TO_ADVANCE. */
+  reps: Record<string, number>
+  /** Concepts that reached 3/3 and were moved on from. */
+  advanced: string[]
+  /** Consecutive non-correct answers per concept, for the "stuck" signal. */
+  wrongStreak: Record<string, number>
+  /** Concepts where a hint has been shown. */
+  hinted: string[]
+  /** The in-class assignment (flow steps 2–3). */
+  assignmentOpened: boolean
+  assignmentSubmitted: boolean
+  /** The "Would you like to review these concepts?" prompt, before and after. */
+  reviewPrompt: null | 'before' | 'after'
+  reviewPromptSeen: { before: boolean; after: boolean }
+  /** Editable workspace files, by path. */
+  fileEdits: Record<string, string>
+  /** Code sent from the editor to the notebook (Theme 5). */
+  clips: NotebookClip[]
+  /** AI-usage detection (flow step 5). */
+  aiDetected: boolean
+  aiDetectedAt: number | null
+  clarifyOpen: boolean
+  clarifyIndex: number
+  clarifyAnswers: Record<string, ClarifyAnswer>
+  clarifyDone: boolean
+  clarifySkipped: boolean
+  /** The weekly review (Theme 6). */
+  weeklyDone: boolean
+  /**
+   * The tasks this student was given, fixed when the review starts. Passing a task raises
+   * mastery, which would otherwise re-pick a different task for that concept mid-review.
+   */
+  weeklyTaskIds: string[]
+  weeklyAnswers: Record<string, string>
+  weeklyResults: Record<string, boolean>
+  weeklyIndex: number
+  /** Blocked paste attempts during the weekly review. */
+  pasteBlocked: number
 }
 
 interface Transient {
@@ -120,6 +231,8 @@ interface Transient {
   cursor: { line: number; col: number }
   selection: { start: number; end: number; text: string } | null
   newNotebook: null | { preset?: 'midterm' }
+  /** Set briefly after a clip is sent, so the notebook can highlight it. */
+  clipFlash: string | null
 }
 
 interface Actions {
@@ -163,15 +276,45 @@ interface Actions {
   markTask(n: number): void
   setVariant<K extends keyof Variants>(key: K, value: Variants[K]): void
   jumpToState(state: FixtureName): void
+
+  // ---------- Iteration 2 ----------
+  finishOnboarding(): void
+  restartOnboarding(): void
+  openPractice(conceptId: string, via: string): void
+  closePractice(): void
+  setPracticeDraft(text: string): void
+  submitPractice(text: string): void
+  showPracticeHint(): void
+  skipPracticeQuestion(): void
+  advanceConcept(): void
+  askReviewPrompt(when: 'before' | 'after'): void
+  resolveReviewPrompt(action: 'review' | 'skip', conceptId?: string): void
+  openAssignment(via: string): void
+  setFileContent(path: string, text: string): void
+  detectAi(via: string): void
+  openClarify(via: string): void
+  answerClarify(text: string): void
+  skipClarify(): void
+  closeClarify(): void
+  submitAssignment(): void
+  addClip(clip: Omit<NotebookClip, 'id' | 'at'>): void
+  removeClip(id: string): void
+  openNotesForConcept(conceptId: string, via: string): void
+  beginWeekly(): void
+  setWeeklyAnswer(taskId: string, text: string): void
+  nextWeeklyTask(): void
+  finishWeekly(): void
+  notePasteBlocked(where: string): void
 }
 
 export type Store = Persisted & Transient & Actions
 
 export const initialPersisted = (): Persisted => ({
-  frontApp: 'ide',
-  open: { ide: true, notebook: false },
+  // The notebook is home base now, so it opens first and the editor starts closed.
+  frontApp: 'notebook',
+  open: { ide: false, notebook: true },
   maximized: { ide: false, notebook: false },
-  notebookRoute: '/home',
+  notebookRoute: TODAY_LECTURE_ROUTE,
   recent: [...SEED_RECENT],
   agent: 'claude',
   customAgent: '',
@@ -185,9 +328,10 @@ export const initialPersisted = (): Persisted => ({
   answers: {},
   questionIndex: 0,
   questionsFinished: false,
-  panelOpen: true,
+  // The ChangeNotes panel starts collapsed: the editor integration is secondary now (Theme 5).
+  panelOpen: false,
   panelTab: 'review',
-  panelWidth: 320,
+  panelWidth: 300,
   sidebarOpen: true,
   sidebarView: 'explorer',
   bottomTab: 'terminal',
@@ -210,8 +354,39 @@ export const initialPersisted = (): Persisted => ({
   todayCorrect: 0,
   participantId: '',
   task: null,
-  variants: { questionPosition: DEFAULT_QUESTION_POSITION, toast: true, hoverCards: true },
+  variants: { questionPosition: DEFAULT_QUESTION_POSITION, toast: true, hoverCards: true, aiMode: 'A' },
   events: [],
+
+  onboarded: false,
+  practiceOpen: true,
+  practiceConcept: null,
+  practiceQuestionId: null,
+  practiceAsked: [],
+  practiceTurns: [],
+  practiceDraft: '',
+  reps: {},
+  advanced: [],
+  wrongStreak: {},
+  hinted: [],
+  assignmentOpened: false,
+  assignmentSubmitted: false,
+  reviewPrompt: null,
+  reviewPromptSeen: { before: false, after: false },
+  fileEdits: {},
+  clips: [],
+  aiDetected: false,
+  aiDetectedAt: null,
+  clarifyOpen: false,
+  clarifyIndex: 0,
+  clarifyAnswers: {},
+  clarifyDone: false,
+  clarifySkipped: false,
+  weeklyDone: false,
+  weeklyTaskIds: [],
+  weeklyAnswers: {},
+  weeklyResults: {},
+  weeklyIndex: 0,
+  pasteBlocked: 0,
 })
 
 function readyLines(agent: AgentId, custom = ''): TermLine[] {
@@ -244,7 +419,6 @@ function withSessionDone(s: Persisted, prompt: string): Partial<Persisted> {
       { kind: 'changenotes', text: AGENT_SCRIPT.captured },
     ],
     mastery: { ...s.mastery, lambda: 0 },
-    panelOpen: true,
     panelTab: 'review',
     toast: true,
   }
@@ -273,29 +447,139 @@ function withQuestionsFinished(s: Persisted): Partial<Persisted> {
   }
 }
 
-export type FixtureName = 'start' | 'afterT1' | 'afterT4' | 'notebookPost'
+let turnId = 1
+const nextTurnId = () => turnId++
+
+const LESSON_BY_ID = new Map(LESSON_QUESTIONS.map((q) => [q.id, q] as const))
+
+function turn(role: PracticeTurn['role'], text: string, extra: Partial<PracticeTurn> = {}): PracticeTurn {
+  return { id: nextTurnId(), role, text, at: Date.now(), ...extra }
+}
+
+/** The next question on a concept that hasn't been asked yet, recycling once they run out. */
+function pickQuestion(conceptId: string, asked: string[]): LessonQuestion | null {
+  const pool = questionsForConcept(conceptId)
+  if (pool.length === 0) return null
+  return pool.find((q) => !asked.includes(q.id)) ?? pool[0]
+}
+
+/** Opens the panel on a concept and asks its first question. */
+function withPracticeStart(s: Persisted, conceptId: string): Partial<Persisted> {
+  const q = pickQuestion(conceptId, [])
+  const concept = conceptById(conceptId)
+  const opening = turn(
+    'coach',
+    `Let's work on **${concept?.name ?? conceptId}**. Answer three of these correctly and we'll move on to the next concept in this lecture.`,
+    { instant: true },
+  )
+  return {
+    practiceOpen: true,
+    practiceConcept: conceptId,
+    practiceQuestionId: q?.id ?? null,
+    practiceAsked: q ? [q.id] : [],
+    practiceDraft: '',
+    practiceTurns: q ? [opening, turn('question', q.prompt, { questionId: q.id, instant: true })] : [opening],
+    reps: { ...s.reps, [conceptId]: s.reps[conceptId] ?? 0 },
+  }
+}
+
+export type FixtureName = 'start' | 'lecture' | 'assignment' | 'aiDetected' | 'afterSubmit' | 'weekly' | 'legacyIde'
 
 /** Starting states for facilitator jumps and five-second screens. Keeps the log and test settings. */
-export function buildFixture(name: FixtureName, keep?: Pick<Persisted, 'participantId' | 'task' | 'variants' | 'events'>): Persisted {
+export function buildFixture(
+  name: FixtureName,
+  keep?: Pick<Persisted, 'participantId' | 'task' | 'variants' | 'events'>,
+): Persisted {
   let s: Persisted = { ...initialPersisted(), ...(keep ?? {}) }
   if (name === 'start') return s
-  s = { ...s, ...withSessionDone(s, DEFAULT_PROMPT) }
-  if (name === 'afterT1') return s
-  s = { ...s, ...withAnswer(s, 'q1', 1, false), toast: false }
-  s = { ...s, ...withAnswer(s, 'q2', 0, false) }
-  s = { ...s, ...withAnswer(s, 'q3', 1, false) }
-  s = { ...s, ...withQuestionsFinished(s), questionIndex: 3, viewed: { 1: true, 2: true, 3: true } }
-  if (name === 'afterT4') return s
+
+  // Everything past the start is post-onboarding, on today's lecture.
+  s = { ...s, onboarded: true, notebookRoute: TODAY_LECTURE_ROUTE }
+  const first = conceptsTaught(TODAY_LECTURE_ID)[0]
+  if (first) s = { ...s, ...withPracticeStart(s, first) }
+  if (name === 'lecture') return s
+
+  if (name === 'legacyIde') {
+    // The original editor review flow, before the assignment opens, for its five-second screen.
+    const done = { ...s, ...withSessionDone(s, DEFAULT_PROMPT) } as Persisted
+    return {
+      ...done,
+      panelOpen: true,
+      open: { ide: true, notebook: false },
+      frontApp: 'ide',
+      activeFile: 'library.py',
+      openTabs: ['library.py', 'README.md'],
+      viewed: { 1: true, 2: true, 3: true },
+    }
+  }
+
+  // The assignment is open in the editor, with the "before" prompt already answered.
+  s = {
+    ...s,
+    assignmentOpened: true,
+    reviewPromptSeen: { ...s.reviewPromptSeen, before: true },
+    reps: { ...s.reps, dictget: 2 },
+    open: { ide: true, notebook: true },
+    frontApp: 'ide',
+    activeFile: ASSIGNMENT.path,
+    openTabs: [ASSIGNMENT.path, 'library.py'],
+    fileEdits: { [ASSIGNMENT.path]: ASSIGNMENT.starterCode },
+  }
+  if (name === 'assignment') return s
+
+  // AI-written code has landed in the assignment file and detection has fired.
+  s = {
+    ...s,
+    fileEdits: { [ASSIGNMENT.path]: aiFilledAssignment() },
+    aiDetected: true,
+    aiDetectedAt: Date.now(),
+    clarifyOpen: s.variants.aiMode === 'A',
+  }
+  if (name === 'aiDetected') return s
+
+  s = {
+    ...s,
+    clarifyOpen: false,
+    clarifyDone: true,
+    clarifyAnswers: Object.fromEntries(CLARIFY_QUESTIONS.map((q) => [q.id, { text: '(answered)', ok: true }])),
+    assignmentSubmitted: true,
+    reviewPrompt: 'after',
+    frontApp: 'notebook',
+    notebookRoute: TODAY_LECTURE_ROUTE,
+  }
+  if (name === 'afterSubmit') return s
+
   return {
     ...s,
-    decisions: { 1: 'accepted', 2: 'accepted', 3: 'accepted' },
-    reviewed: { 1: true, 2: true, 3: true },
-    frontApp: 'notebook',
-    open: { ide: true, notebook: true },
-    notebookRoute: '/session/today',
-    notebookDot: false,
-    recent: ['/session/today', ...s.recent].slice(0, 3),
+    reviewPrompt: null,
+    reviewPromptSeen: { before: true, after: true },
+    notebookRoute: '/review',
+    practiceOpen: false,
+    weeklyTaskIds: tasksForMastery(WEEKLY_REVIEW.conceptIds, s.mastery).map((t) => t.id),
   }
+}
+
+/** The assignment file with the AI's answer dropped into both stubs. */
+export function aiFilledAssignment(): string {
+  const lines = ASSIGNMENT.starterCode.split('\n')
+  const start = lines.findIndex((l) => l.startsWith('def count_checkouts'))
+  const end = lines.findIndex((l) => l.startsWith('if __name__'))
+  if (start === -1 || end === -1) return ASSIGNMENT.starterCode
+  const AI = `def count_checkouts(records):
+    """Return a dictionary of user -> number of checkouts."""
+    counts = {}
+    for record in records:
+        counts[record["user"]] = counts.get(record["user"], 0) + 1
+    return counts
+
+
+def top_three(counts):
+    """Return the 3 users with the most checkouts, highest first."""
+    ranked = sorted(counts.items(), key=lambda pair: pair[1], reverse=True)
+    return ranked[:3]
+
+`
+  return [...lines.slice(0, start), ...AI.split('\n'), ...lines.slice(end)].join('\n')
 }
 
 // ---------- Persistence: paused while five-second screens borrow the store ----------
@@ -367,6 +651,7 @@ export const useStore = create<Store>()(
         cursor: { line: 1, col: 1 },
         selection: null,
         newNotebook: null,
+        clipFlash: null,
 
         focusApp(app) {
           if (get().frontApp === app) return
@@ -384,9 +669,9 @@ export const useStore = create<Store>()(
         },
         openNotebook(via) {
           const s = get()
-          const relevant = isReviewComplete(s) ? '/session/today' : '/home'
           // The dock keeps your place unless there's something new to show.
           const keepPlace = via === 'dock' && s.open.notebook && !s.notebookDot
+          const relevant = isReviewComplete(s) ? '/session/today' : TODAY_LECTURE_ROUTE
           const route = keepPlace ? s.notebookRoute : relevant
           log('app_switched', { from: s.frontApp, to: 'notebook', via })
           set({
@@ -460,6 +745,8 @@ export const useStore = create<Store>()(
           setTimeout(() => {
             set((st) => ({ ...withSessionDone(st, text) }))
             log('session_captured', { changes: 3 })
+            // Running an agent is also an AI-usage signal.
+            get().detectAi('agent_run')
           }, 5000)
         },
 
@@ -706,27 +993,384 @@ export const useStore = create<Store>()(
             }),
             jump: null,
             selection: null,
+            clipFlash: null,
           })
+        },
+
+        // ---------- Onboarding (Theme 2) ----------
+
+        finishOnboarding() {
+          const s = get()
+          log('onboarding_finished', {})
+          const first = conceptsTaught(TODAY_LECTURE_ID)[0]
+          set({
+            onboarded: true,
+            frontApp: 'notebook',
+            open: { ...s.open, notebook: true },
+            notebookRoute: TODAY_LECTURE_ROUTE,
+            ...(first ? withPracticeStart(s, first) : {}),
+          })
+        },
+        restartOnboarding() {
+          log('onboarding_restarted', {})
+          set({ onboarded: false })
+        },
+
+        // ---------- Lecture practice panel (Theme 4) ----------
+
+        openPractice(conceptId, via) {
+          const s = get()
+          log('practice_panel_opened', { concept: conceptId, via })
+          if (s.practiceConcept === conceptId && s.practiceTurns.length > 0) {
+            set({ practiceOpen: true })
+            return
+          }
+          set(withPracticeStart(s, conceptId))
+          const q = get().practiceQuestionId
+          if (q) log('practice_question_shown', { id: q, concept: conceptId })
+        },
+        closePractice() {
+          log('practice_panel_closed', { concept: get().practiceConcept })
+          set({ practiceOpen: false })
+        },
+        setPracticeDraft: (practiceDraft) => set({ practiceDraft }),
+
+        submitPractice(raw) {
+          const text = raw.trim()
+          if (!text) return
+          const s = get()
+          const conceptId = s.practiceConcept
+          const question = LESSON_BY_ID.get(s.practiceQuestionId ?? '')
+          if (!conceptId || !question) return
+
+          const { grade, feedback } = gradeResponse(question, text)
+          const reps = s.reps[conceptId] ?? 0
+          const nextReps = grade === 'correct' ? Math.min(REPS_TO_ADVANCE, reps + 1) : reps
+          const streak = grade === 'correct' ? 0 : (s.wrongStreak[conceptId] ?? 0) + 1
+
+          log('practice_response', {
+            id: question.id,
+            concept: conceptId,
+            grade,
+            reps: nextReps,
+            of: REPS_TO_ADVANCE,
+            chars: text.length,
+          })
+
+          const turns: PracticeTurn[] = [
+            ...s.practiceTurns,
+            turn('student', text, { questionId: question.id, grade }),
+            turn('coach', feedback, { questionId: question.id, grade }),
+          ]
+
+          const base: Partial<Persisted> = {
+            practiceDraft: '',
+            reps: { ...s.reps, [conceptId]: nextReps },
+            wrongStreak: { ...s.wrongStreak, [conceptId]: streak },
+            questionsAnswered: s.questionsAnswered + 1,
+            questionsCorrect: s.questionsCorrect + (grade === 'correct' ? 1 : 0),
+            todayAnswered: s.todayAnswered + 1,
+            todayCorrect: s.todayCorrect + (grade === 'correct' ? 1 : 0),
+          }
+
+          if (grade !== 'correct') {
+            // Mastery learning: stay on this question and let them try again.
+            set({ ...base, practiceTurns: turns })
+            if (streak >= STUCK_AFTER) log('student_stuck', { concept: conceptId, tries: streak })
+            return
+          }
+
+          if (nextReps >= REPS_TO_ADVANCE) {
+            const concept = conceptById(conceptId)
+            const nextConcept = conceptsTaught(TODAY_LECTURE_ID).find(
+              (id) => id !== conceptId && !s.advanced.includes(id),
+            )
+            const closing = nextConcept
+              ? `That's ${REPS_TO_ADVANCE} out of ${REPS_TO_ADVANCE} on **${concept?.name}**. Ready for **${conceptById(nextConcept)?.name}**?`
+              : `That's ${REPS_TO_ADVANCE} out of ${REPS_TO_ADVANCE} on **${concept?.name}**, and that's every concept in this lecture. Nicely done.`
+            log('concept_advanced', { concept: conceptId, next: nextConcept ?? null })
+            set({
+              ...base,
+              advanced: s.advanced.includes(conceptId) ? s.advanced : [...s.advanced, conceptId],
+              practiceTurns: [...turns, turn('coach', closing)],
+              practiceQuestionId: null,
+            })
+            return
+          }
+
+          // Correct, but not done: move to a fresh question on the same concept.
+          const asked = [...s.practiceAsked]
+          const nextQ = pickQuestion(conceptId, asked)
+          if (nextQ) {
+            asked.push(nextQ.id)
+            log('practice_question_shown', { id: nextQ.id, concept: conceptId })
+          }
+          set({
+            ...base,
+            practiceAsked: asked,
+            practiceQuestionId: nextQ?.id ?? null,
+            practiceTurns: nextQ ? [...turns, turn('question', nextQ.prompt, { questionId: nextQ.id })] : turns,
+          })
+        },
+
+        showPracticeHint() {
+          const s = get()
+          const question = LESSON_BY_ID.get(s.practiceQuestionId ?? '')
+          if (!question) return
+          log('practice_hint', { id: question.id, concept: s.practiceConcept })
+          set({
+            hinted: s.hinted.includes(question.id) ? s.hinted : [...s.hinted, question.id],
+            practiceTurns: [...s.practiceTurns, turn('coach', `**Hint.** ${question.hint}`)],
+          })
+        },
+
+        skipPracticeQuestion() {
+          const s = get()
+          const conceptId = s.practiceConcept
+          if (!conceptId) return
+          log('practice_question_skipped', { id: s.practiceQuestionId, concept: conceptId })
+          const asked = [...s.practiceAsked]
+          const nextQ = pickQuestion(conceptId, asked)
+          if (nextQ) asked.push(nextQ.id)
+          set({
+            practiceAsked: asked,
+            practiceQuestionId: nextQ?.id ?? null,
+            practiceDraft: '',
+            practiceTurns: [
+              ...s.practiceTurns,
+              turn('coach', 'No problem — here is a different one.'),
+              ...(nextQ ? [turn('question', nextQ.prompt, { questionId: nextQ.id })] : []),
+            ],
+          })
+        },
+
+        advanceConcept() {
+          const s = get()
+          const next = conceptsTaught(TODAY_LECTURE_ID).find(
+            (id) => id !== s.practiceConcept && !s.advanced.includes(id),
+          )
+          if (!next) {
+            set({ practiceQuestionId: null })
+            return
+          }
+          log('practice_next_concept', { concept: next })
+          set(withPracticeStart(s, next))
+        },
+
+        // ---------- Assignment and the review prompts (flow steps 2–3) ----------
+
+        askReviewPrompt(when) {
+          log('review_prompt_shown', { when, mode: get().variants.aiMode })
+          set({ reviewPrompt: when })
+        },
+        resolveReviewPrompt(action, conceptId) {
+          const s = get()
+          const when = s.reviewPrompt
+          log('review_prompt_action', { when, action, concept: conceptId ?? null })
+          set({
+            reviewPrompt: null,
+            reviewPromptSeen: when ? { ...s.reviewPromptSeen, [when]: true } : s.reviewPromptSeen,
+          })
+          if (action === 'review' && conceptId) {
+            get().openNotesForConcept(conceptId, 'review_prompt')
+          } else if (action === 'skip' && when === 'before') {
+            get().openAssignment('review_prompt')
+          }
+        },
+        openAssignment(via) {
+          const s = get()
+          log('assignment_opened', { id: ASSIGNMENT.id, via })
+          set({
+            assignmentOpened: true,
+            frontApp: 'ide',
+            open: { ...s.open, ide: true },
+            activeFile: ASSIGNMENT.path,
+            openTabs: s.openTabs.includes(ASSIGNMENT.path) ? s.openTabs : [ASSIGNMENT.path, ...s.openTabs],
+            fileEdits: { ...s.fileEdits, [ASSIGNMENT.path]: s.fileEdits[ASSIGNMENT.path] ?? ASSIGNMENT.starterCode },
+            bounceNonce: s.bounceNonce + 1,
+          })
+        },
+        setFileContent(path, text) {
+          set({ fileEdits: { ...get().fileEdits, [path]: text } })
+        },
+
+        // ---------- AI-usage detection (flow step 5) ----------
+
+        detectAi(via) {
+          const s = get()
+          if (s.aiDetected) return
+          log('ai_usage_detected', { via, mode: s.variants.aiMode })
+          set({ aiDetected: true, aiDetectedAt: Date.now() })
+          // Option A asks straight away. Option B waits for submission.
+          if (s.variants.aiMode === 'A') get().openClarify('on_the_spot')
+        },
+        openClarify(via) {
+          const s = get()
+          log('clarify_opened', { via, mode: s.variants.aiMode })
+          set({ clarifyOpen: true, clarifyIndex: 0, clarifySkipped: false })
+        },
+        answerClarify(raw) {
+          const text = raw.trim()
+          if (!text) return
+          const s = get()
+          const q = CLARIFY_QUESTIONS[s.clarifyIndex]
+          if (!q) return
+          const lower = text.toLowerCase()
+          const ok = q.accept.some((a) => lower.includes(a.toLowerCase()))
+          const current = (s.mastery[q.conceptId] ?? 0) as Level
+          log('clarify_answered', { id: q.id, ok, mode: s.variants.aiMode, index: s.clarifyIndex })
+          const last = s.clarifyIndex + 1 >= CLARIFY_QUESTIONS.length
+          set({
+            clarifyAnswers: { ...s.clarifyAnswers, [q.id]: { text, ok } },
+            clarifyIndex: ok || last ? s.clarifyIndex + (last ? 0 : 1) : s.clarifyIndex,
+            clarifyDone: last && ok,
+            // A good explanation is a comprehension check, so it moves mastery like the editor questions do.
+            mastery: ok ? { ...s.mastery, [q.conceptId]: Math.min(4, current + 1) as Level } : s.mastery,
+            questionsAnswered: s.questionsAnswered + 1,
+            questionsCorrect: s.questionsCorrect + (ok ? 1 : 0),
+            todayAnswered: s.todayAnswered + 1,
+            todayCorrect: s.todayCorrect + (ok ? 1 : 0),
+          })
+          if (last && ok) log('clarify_finished', { mode: s.variants.aiMode, answered: CLARIFY_QUESTIONS.length })
+        },
+        skipClarify() {
+          const s = get()
+          log('clarify_skipped', { mode: s.variants.aiMode, index: s.clarifyIndex })
+          set({ clarifyOpen: false, clarifySkipped: true })
+          if (s.variants.aiMode === 'B') get().submitAssignment()
+        },
+        closeClarify() {
+          set({ clarifyOpen: false })
+        },
+        submitAssignment() {
+          const s = get()
+          // Option B puts the clarifying questions in front of submission.
+          if (s.variants.aiMode === 'B' && s.aiDetected && !s.clarifyDone && !s.clarifySkipped) {
+            get().openClarify('at_submission')
+            return
+          }
+          log('assignment_submitted', {
+            id: ASSIGNMENT.id,
+            mode: s.variants.aiMode,
+            ai_detected: s.aiDetected,
+            explained: s.clarifyDone,
+            flagged: s.aiDetected && !s.clarifyDone,
+          })
+          set({ assignmentSubmitted: true, clarifyOpen: false, notebookDot: true })
+          // Flow step 3: the same prompt again, after the assignment.
+          get().askReviewPrompt('after')
+          get().openNotebook('after_submit')
+        },
+
+        // ---------- Editor → notebook (Theme 5) ----------
+
+        addClip(clip) {
+          const s = get()
+          const id = `clip-${s.clips.length + 1}-${Date.now().toString(36)}`
+          log('clip_added', { concept: clip.conceptId, item: clip.itemId, lines: clip.lines })
+          set({ clips: [...s.clips, { ...clip, id, at: Date.now() }], clipFlash: id, notebookDot: true })
+          setTimeout(() => {
+            if (useStore.getState().clipFlash === id) useStore.setState({ clipFlash: null })
+          }, 4000)
+        },
+        removeClip(id) {
+          log('clip_removed', { id })
+          set({ clips: get().clips.filter((c) => c.id !== id) })
+        },
+        openNotesForConcept(conceptId, via) {
+          const s = get()
+          const concept = conceptById(conceptId)
+          const route = concept ? `/course/${concept.courseId}/item/${concept.itemId}` : TODAY_LECTURE_ROUTE
+          log('notes_opened_for_concept', { concept: conceptId, via })
+          set({
+            frontApp: 'notebook',
+            open: { ...s.open, notebook: true },
+            bounceNonce: s.bounceNonce + 1,
+            notebookDot: false,
+          })
+          get().navNotebook(route)
+          get().openPractice(conceptId, via)
+        },
+
+        // ---------- Weekly review (Theme 6) ----------
+
+        beginWeekly() {
+          const s = get()
+          if (s.weeklyTaskIds.length > 0) return
+          const tasks = tasksForMastery(WEEKLY_REVIEW.conceptIds, s.mastery)
+          log('weekly_review_started', { tasks: tasks.length, concepts: tasks.map((t) => t.conceptId) })
+          set({ weeklyTaskIds: tasks.map((t) => t.id), weeklyIndex: 0 })
+        },
+        setWeeklyAnswer(taskId, text) {
+          set({ weeklyAnswers: { ...get().weeklyAnswers, [taskId]: text } })
+        },
+        nextWeeklyTask() {
+          const s = get()
+          const tasks = activeWeeklyTasks(s)
+          const task = tasks[s.weeklyIndex]
+          if (!task) return
+          const answer = (s.weeklyAnswers[task.id] ?? '').toLowerCase()
+          const pass = task.needs.every((n) => answer.includes(n.toLowerCase()))
+          log('weekly_task_answered', { id: task.id, concept: task.conceptId, pass, index: s.weeklyIndex })
+          set({
+            weeklyResults: { ...s.weeklyResults, [task.id]: pass },
+            weeklyIndex: s.weeklyIndex + 1,
+          })
+          if (s.weeklyIndex + 1 >= tasks.length) get().finishWeekly()
+        },
+        finishWeekly() {
+          const s = get()
+          const tasks = activeWeeklyTasks(s)
+          const results = { ...s.weeklyResults }
+          const mastery = { ...s.mastery }
+          tasks.forEach((t) => {
+            const current = (mastery[t.conceptId] ?? 0) as Level
+            if (results[t.id]) mastery[t.conceptId] = Math.min(4, current + 1) as Level
+          })
+          const passed = tasks.filter((t) => results[t.id]).length
+          log('weekly_review_finished', {
+            passed,
+            total: tasks.length,
+            paste_blocked: s.pasteBlocked,
+            missed: tasks.filter((t) => !results[t.id]).map((t) => t.conceptId),
+          })
+          set({ weeklyDone: true, mastery, streak: s.streak + 1 })
+        },
+        notePasteBlocked(where) {
+          const s = get()
+          log('paste_blocked', { where, count: s.pasteBlocked + 1 })
+          set({ pasteBlocked: s.pasteBlocked + 1 })
         },
       }
     },
     {
       name: STORE_KEY,
-      version: 1,
-      // Browsers that already ran the prototype saved the old bottom default. Move them to top and keep their log.
+      version: 2,
+      // Iteration 2 reshaped the state, so an older saved session starts fresh but keeps its log.
       migrate: (persisted, version) => {
         const saved = persisted as Persisted
-        return (version < 1 ? { ...saved, variants: { ...saved.variants, questionPosition: 'top' } } : saved) as Store
+        if (version >= 2) return saved as Store
+        return {
+          ...initialPersisted(),
+          participantId: saved?.participantId ?? '',
+          events: saved?.events ?? [],
+          variants: { ...initialPersisted().variants, ...(saved?.variants ?? {}) },
+        } as unknown as Store
       },
       storage: createJSONStorage(() => safeStorage),
       partialize: (s) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { bounceNonce, jump, cursor, selection, newNotebook, ...rest } = s
+        const { bounceNonce, jump, cursor, selection, newNotebook, clipFlash, ...rest } = s
         return Object.fromEntries(Object.entries(rest).filter(([, v]) => typeof v !== 'function')) as unknown as Store
       },
       onRehydrateStorage: () => (state) => {
         if (!state) return
         chatId = Math.max(0, ...state.chat.map((m) => m.id)) + 1
+        turnId = Math.max(0, ...state.practiceTurns.map((t) => t.id)) + 1
+        // Restored turns shouldn't replay their typing animation.
+        if (state.practiceTurns.some((t) => !t.instant)) {
+          useStore.setState({ practiceTurns: state.practiceTurns.map((t) => ({ ...t, instant: true })) })
+        }
         // A reload mid-edit would strand the timers, so finish the session straight away.
         if (state.phase === 'running') {
           useStore.setState(withSessionDone(state, state.prompt))
@@ -782,3 +1426,71 @@ export const visibleConcepts = (mastery: Record<string, Level>) =>
 
 export const correctCount = (answers: Record<string, Answer>) =>
   Object.values(answers).filter((a) => !a.skipped && a.correct).length
+
+/** This week's review tasks, chosen for the student's current mastery. */
+export const weeklyTasks = (mastery: Record<string, Level>) =>
+  tasksForMastery(WEEKLY_REVIEW.conceptIds, mastery)
+
+/**
+ * The tasks this student is actually taking. Once the review starts the set is fixed, so a
+ * mastery change part-way through can't swap a question or mis-report which one was missed.
+ */
+export function activeWeeklyTasks(s: Pick<Persisted, 'weeklyTaskIds' | 'mastery'>) {
+  if (s.weeklyTaskIds.length === 0) return weeklyTasks(s.mastery)
+  return s.weeklyTaskIds.map((id) => REVIEW_TASKS.find((t) => t.id === id)).filter((t) => t !== undefined)
+}
+
+export const weeklyTaskById = (id: string) => REVIEW_TASKS.find((t) => t.id === id)
+
+/** The live reason ChangeNotes thinks a student needs support (Theme 3). */
+export function supportSignals(s: Persisted): SupportSignal[] {
+  const out: SupportSignal[] = []
+
+  // 1. Stuck: several non-correct answers in a row on one concept.
+  Object.entries(s.wrongStreak).forEach(([conceptId, tries]) => {
+    if (tries >= STUCK_AFTER) {
+      out.push({
+        kind: 'stuck',
+        conceptId,
+        detail: `${tries} tries in a row on this concept in the practice panel without landing it.`,
+      })
+    }
+  })
+
+  // 2. AI usage detected in their code.
+  if (s.aiDetected) {
+    const explained = s.clarifyDone
+    ASSIGNMENT.conceptIds.slice(0, 1).forEach((conceptId) =>
+      out.push({
+        kind: 'ai',
+        conceptId,
+        detail: explained
+          ? 'AI-written code in In-class 6, which you explained in your own words.'
+          : 'AI-written code in In-class 6 that has not been explained yet.',
+      }),
+    )
+  }
+
+  // 3. Mastery still low on a concept this lecture taught.
+  conceptsTaught(TODAY_LECTURE_ID).forEach((conceptId) => {
+    const level = s.mastery[conceptId] ?? 0
+    if (level < 2 && !out.some((sig) => sig.conceptId === conceptId && sig.kind === 'mastery')) {
+      out.push({
+        kind: 'mastery',
+        conceptId,
+        detail: `Covered in today's lecture, and still below Familiar.`,
+      })
+    }
+  })
+
+  // 4. Patterns from the weekly review.
+  if (s.weeklyDone) {
+    activeWeeklyTasks(s).forEach((task) => {
+      if (!s.weeklyResults[task.id]) {
+        out.push({ kind: 'weekly', conceptId: task.conceptId, detail: task.failNote })
+      }
+    })
+  }
+
+  return out
+}

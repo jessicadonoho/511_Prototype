@@ -33,7 +33,7 @@ export const COURSES: Course[] = [
     items: [
       { id: 'cs120-l4', kind: 'lecture', code: 'L4', title: 'Conditionals & Booleans', beforeExam: true },
       { id: 'cs120-l5', kind: 'lecture', code: 'L5', title: 'Lists & Loops', beforeExam: true },
-      { id: 'cs120-l6', kind: 'lecture', code: 'L6', title: 'Dictionaries', beforeExam: true },
+      { id: 'cs120-l6', kind: 'lecture', code: 'L6', title: 'Dictionaries', current: true, beforeExam: true },
       { id: 'cs120-l7', kind: 'lecture', code: 'L7', title: 'Sorting & Lambdas', beforeExam: true },
       { id: 'cs120-l8', kind: 'lecture', code: 'L8', title: 'Files & CSV' },
       { id: 'cs120-p1', kind: 'project', code: 'Project 1', title: 'Grade Calculator', beforeExam: true },

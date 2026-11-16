@@ -7,9 +7,15 @@ import { SEED_HISTORY, YESTERDAY_SESSION_ID } from '../data/history'
 import { MIDTERM_DAYS, MIDTERM_LABEL } from '../data/progress'
 import { problemsFor, PROBLEM_TYPE_LABEL, PROBLEMS } from '../data/practice'
 import { QUESTIONS } from '../data/questions'
+import { ASSIGNMENT } from '../data/assignment'
+import { PROFESSOR, TODAY_LECTURE_ID, conceptsTaught } from '../data/lectures'
+import { REPS_TO_ADVANCE } from '../data/lessonPractice'
+import { JOIN } from '../data/onboarding'
+import { WEEKLY_REVIEW } from '../data/weeklyReview'
 import { useFrozen } from '../lib/hooks'
 import { isReviewComplete, logEvent, useStore, visibleConcepts, type MasteryChange } from '../store/store'
 import { MasteryChanges, PracticeRunner, ProblemView } from './PracticeRunner'
+import { SupportCard } from './SupportCard'
 import { Card, ConceptChip, ConceptRow, Crumbs, MasteryRing, PrimaryButton, SecondaryButton, SessionList, Sparkline, daysUntil, pageSubtitle, pageTitle, useSessions } from './shared'
 
 // ---------- Home ----------
@@ -22,6 +28,14 @@ export function HomePage() {
   const lessonDone = useStore((s) => s.lessonDone)
   const lessonScore = useStore((s) => s.lessonScore)
   const mastery = useStore((s) => s.mastery)
+  const reps = useStore((s) => s.reps)
+  const advanced = useStore((s) => s.advanced)
+  const weeklyDone = useStore((s) => s.weeklyDone)
+  const assignmentSubmitted = useStore((s) => s.assignmentSubmitted)
+  const assignmentOpened = useStore((s) => s.assignmentOpened)
+  const openAssignment = useStore((s) => s.openAssignment)
+  const askReviewPrompt = useStore((s) => s.askReviewPrompt)
+  const seenBefore = useStore((s) => s.reviewPromptSeen.before)
   const recent = useStore((s) => s.recent)
   const openNew = useStore((s) => s.openNewNotebook)
   const sessions = useSessions()
@@ -31,11 +45,86 @@ export function HomePage() {
   const counts = LEVELS.map((_, i) => visibleConcepts(mastery).filter((c) => mastery[c.id] === i).length)
   const total = counts.reduce((a, b) => a + b, 0)
 
+  const lecture = findItem(TODAY_LECTURE_ID)
+  const taught = conceptsTaught(TODAY_LECTURE_ID)
+  const lectureRoute = `/course/cs120/item/${TODAY_LECTURE_ID}`
+  const doneCount = taught.filter((id) => advanced.includes(id)).length
+
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-      <h1 className="text-2xl font-extrabold text-ink lg:col-span-2">Good evening, Alex</h1>
+      <div className="lg:col-span-2">
+        <h1 className="text-2xl font-extrabold text-ink">Good afternoon, Alex</h1>
+        <p className="mt-0.5 text-[13px] text-ink-soft">
+          {JOIN.course} · {PROFESSOR}
+        </p>
+      </div>
 
-      <section className="rounded-xl bg-navy p-4 text-white lg:row-span-1">
+      <div className="lg:col-span-2">
+        <SupportCard />
+      </div>
+
+      {/* The lecture is the thing to come back to, so it leads. */}
+      <section className="rounded-xl border-2 border-turq-dark bg-white p-4 lg:col-span-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-turq-soft px-2 py-0.5 text-[11px] font-extrabold text-ink">Today’s lecture</span>
+          <h2 className="min-w-0 flex-1 text-[15px] font-bold text-ink">
+            {lecture ? `${lecture.item.code} · ${lecture.item.title}` : 'Today’s lecture'}
+          </h2>
+          <span className="text-[12px] font-semibold text-ink-soft">
+            {doneCount} of {taught.length} concepts at {REPS_TO_ADVANCE}/{REPS_TO_ADVANCE}
+          </span>
+        </div>
+        <p className="mt-1 text-sm text-ink-soft">
+          Lecture notes, with a practice panel beside them for each concept.
+        </p>
+        <ul className="mt-2 flex flex-wrap gap-1.5">
+          {taught.map((id) => (
+            <li
+              key={id}
+              className="flex items-center gap-1.5 rounded-full border border-line bg-paper px-2.5 py-0.5 text-[12px] font-semibold text-ink"
+            >
+              {advanced.includes(id) && <span aria-label="Done">✓</span>}
+              {conceptById(id)?.name}
+              <span className="font-bold text-turq-dark">
+                {reps[id] ?? 0}/{REPS_TO_ADVANCE}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <PrimaryButton onClick={() => nav(lectureRoute)}>Open the lecture</PrimaryButton>
+          {assignmentSubmitted ? (
+            <span className="text-[13px] font-semibold text-turq-dark">✓ {ASSIGNMENT.code} submitted</span>
+          ) : (
+            <SecondaryButton
+              onClick={() => {
+                if (!seenBefore) askReviewPrompt('before')
+                else openAssignment('home_card')
+              }}
+            >
+              {assignmentOpened ? `Back to ${ASSIGNMENT.code} ↗` : `Start ${ASSIGNMENT.code} ↗`}
+            </SecondaryButton>
+          )}
+        </div>
+      </section>
+
+      <Card title={WEEKLY_REVIEW.title}>
+        <p className="text-sm text-ink-soft">
+          Assigned by {WEEKLY_REVIEW.assignedBy} · {WEEKLY_REVIEW.when}
+        </p>
+        {weeklyDone ? (
+          <p className="mt-1 text-sm text-ink">Done. Your results are on the review page.</p>
+        ) : (
+          <p className="mt-1 text-sm text-ink">
+            Questions picked for your own mastery level. Typed answers only — pasting is turned off.
+          </p>
+        )}
+        <SecondaryButton className="mt-3" onClick={() => nav('/review')}>
+          {weeklyDone ? 'See results' : 'Open the review'}
+        </SecondaryButton>
+      </Card>
+
+      <section className="rounded-xl bg-navy p-4 text-white">
         <h2 className="text-[15px] font-bold">Today’s Lesson</h2>
         {lessonDone ? (
           <>
@@ -49,38 +138,6 @@ export function HomePage() {
           </>
         )}
       </section>
-
-      <Card title={captured ? 'Just captured from your editor' : 'Yesterday, from your editor'}>
-        <button className="w-full rounded-lg text-left hover:bg-paper" onClick={() => nav(`/session/${session.id}`)}>
-          <div className="text-sm font-semibold text-ink">{session.prompt}</div>
-          <div className="text-xs text-ink-soft">{session.date} · {session.agentName} · {session.files.join(', ')}</div>
-        </button>
-        {captured ? (
-          <ul className="mt-2 flex flex-col gap-1">
-            {session.concepts.map((id) => {
-              const concept = conceptById(id)!
-              const before = concept.addedToday ? null : concept.start
-              const now = mastery[id] ?? 0
-              return (
-                <li key={id} className="flex items-center gap-2 text-[13px] text-ink">
-                  <span className="min-w-0 flex-1 truncate">{concept.name}</span>
-                  {before == null ? (
-                    <span className="text-xs font-bold text-turq-dark">New · {LEVELS[now]}</span>
-                  ) : now > before ? (
-                    <span className="text-xs font-bold text-turq-dark">↑ {LEVELS[now]}</span>
-                  ) : (
-                    <span className="text-xs text-ink-soft">– {LEVELS[now]}</span>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {session.concepts.map((id) => <ConceptChip key={id} id={id} />)}
-          </div>
-        )}
-      </Card>
 
       <Card title="Mastery snapshot">
         <div className="flex h-3 gap-0.5 overflow-hidden rounded-full" role="img" aria-label={LEVELS.map((l, i) => `${l}: ${counts[i]}`).join(', ')}>
@@ -113,6 +170,17 @@ export function HomePage() {
             </li>
           ))}
         </ul>
+      </Card>
+
+      {/* The editor connection still matters, but it's no longer the headline. */}
+      <Card title={captured ? 'Just captured from your editor' : 'Recently, from your editor'}>
+        <button className="w-full rounded-lg text-left hover:bg-paper" onClick={() => nav(`/session/${session.id}`)}>
+          <div className="text-sm font-semibold text-ink">{session.prompt}</div>
+          <div className="text-xs text-ink-soft">{session.date} · {session.agentName} · {session.files.join(', ')}</div>
+        </button>
+        <div className="mt-2 flex flex-wrap gap-1">
+          {session.concepts.map((id) => <ConceptChip key={id} id={id} />)}
+        </div>
       </Card>
 
       <Card className="lg:col-span-2" title="Upcoming">

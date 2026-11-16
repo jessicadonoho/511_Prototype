@@ -1,11 +1,38 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Logo } from '../components/common'
-import { COURSES, conceptById, type Course } from '../data/courses'
-import { logEvent, useStore, visibleConcepts } from '../store/store'
+import { COURSES, conceptById, findItem, type Course } from '../data/courses'
+import { conceptsTaught, lectureFor } from '../data/lectures'
+import { WEEKLY_REVIEW } from '../data/weeklyReview'
+import { logEvent, supportSignals, useStore, visibleConcepts } from '../store/store'
+import { LecturePage } from './LecturePage'
 import { NewNotebookModal } from './NewNotebookModal'
 import { AllConceptsPage, ConceptPage, CoursePage, CustomNotebookPage, HomePage, ItemPage, LessonPage, NotFound, PracticePage, SessionPage } from './pages'
+import { PracticePanel } from './PracticePanel'
+import { ProfessorPage } from './ProfessorPage'
 import { ProgressPage } from './ProgressPage'
+import { ReviewPrompt } from './ReviewPrompt'
+import { SupportCard } from './SupportCard'
+import { WeeklyReviewPage } from './WeeklyReviewPage'
 import { useSessions } from './shared'
+
+/** Lectures get the notes page; projects keep the original item page. */
+function ItemRoute({ itemId }: { itemId: string }) {
+  const found = findItem(itemId)
+  if (found?.item.kind === 'lecture') return <LecturePage key={itemId} itemId={itemId} />
+  return <ItemPage key={itemId} itemId={itemId} />
+}
+
+function SupportPage() {
+  return (
+    <div className="flex flex-col gap-3">
+      <h1 className="text-2xl font-extrabold text-ink">Where you need a hand</h1>
+      <p className="-mt-1 text-[13px] text-ink-soft">
+        Everything ChangeNotes has picked up on, and what set each one off.
+      </p>
+      <SupportCard showEmpty />
+    </div>
+  )
+}
 
 function Router() {
   const route = useStore((s) => s.notebookRoute)
@@ -21,8 +48,14 @@ function Router() {
       return <AllConceptsPage />
     case 'history':
       return <NotebookHistory />
+    case 'review':
+      return <WeeklyReviewPage />
+    case 'professor':
+      return <ProfessorPage />
+    case 'support':
+      return <SupportPage />
     case 'course':
-      return p[2] === 'item' ? <ItemPage key={p[3]} itemId={p[3]} /> : <CoursePage key={p[1]} courseId={p[1]} />
+      return p[2] === 'item' ? <ItemRoute itemId={p[3]} /> : <CoursePage key={p[1]} courseId={p[1]} />
     case 'concept':
       return <ConceptPage key={p[1]} conceptId={p[1]} />
     case 'session':
@@ -36,10 +69,22 @@ function Router() {
   }
 }
 
+/** The lecture whose practice panel should be docked, if the current route is one. */
+function useDockedLecture(): string | null {
+  const route = useStore((s) => s.notebookRoute)
+  const p = route.split('/').slice(1)
+  if (p[0] !== 'course' || p[2] !== 'item') return null
+  const itemId = p[3]
+  if (!lectureFor(itemId) || conceptsTaught(itemId).length === 0) return null
+  return itemId
+}
+
 export function NotebookApp() {
   const route = useStore((s) => s.notebookRoute)
   const newNotebook = useStore((s) => s.newNotebook)
+  const reviewPrompt = useStore((s) => s.reviewPrompt)
   const scroller = useRef<HTMLDivElement>(null)
+  const lectureId = useDockedLecture()
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: 0 })
@@ -50,13 +95,17 @@ export function NotebookApp() {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <main ref={scroller} className="note-scroll min-h-0 flex-1 overflow-y-auto p-4">
-          <div className="mx-auto max-w-4xl">
-            <Router />
-          </div>
-        </main>
+        <div className="flex min-h-0 flex-1">
+          <main ref={scroller} className="note-scroll min-h-0 min-w-0 flex-1 overflow-y-auto p-4">
+            <div className={lectureId ? 'mx-auto max-w-3xl' : 'mx-auto max-w-4xl'}>
+              <Router />
+            </div>
+          </main>
+          {lectureId && <PracticePanel itemId={lectureId} />}
+        </div>
       </div>
       {newNotebook && <NewNotebookModal preset={newNotebook.preset} />}
+      {reviewPrompt && <ReviewPrompt />}
     </div>
   )
 }
@@ -137,28 +186,55 @@ function CourseTree({ course }: { course: Course }) {
 
 function Sidebar() {
   const lessonDone = useStore((s) => s.lessonDone)
+  const weeklyDone = useStore((s) => s.weeklyDone)
   const notebooks = useStore((s) => s.customNotebooks)
   const openNew = useStore((s) => s.openNewNotebook)
+  const signals = useStore((s) => supportSignals(s).length)
+  const [extrasOpen, setExtrasOpen] = useState(false)
+
   return (
     <aside className="note-scroll flex w-[216px] shrink-0 flex-col overflow-y-auto border-r border-line bg-[#f7f2e6] p-2 max-[1180px]:w-[190px]" aria-label="Notebook navigation">
       <NavItem route="/home">Home</NavItem>
-      <NavItem route="/lesson" dot={!lessonDone}>Today’s Lesson</NavItem>
-      <NavItem route="/progress">Progress</NavItem>
 
-      <SectionLabel>Courses</SectionLabel>
+      {/* Lectures lead: the notebook is home base now. */}
+      <SectionLabel>My classes</SectionLabel>
       {COURSES.map((c) => <CourseTree key={c.id} course={c} />)}
 
-      <SectionLabel>My Notebooks</SectionLabel>
-      {notebooks.map((n) => (
-        <NavItem key={n.id} route={`/notebook/${n.id}`}>{n.name}</NavItem>
-      ))}
-      <button className="rounded-lg px-2 py-1 text-left text-[13px] font-bold text-turq-dark hover:bg-paper-2" onClick={() => openNew()}>
-        + New notebook
-      </button>
+      <SectionLabel>Assigned to me</SectionLabel>
+      <NavItem route="/review" dot={!weeklyDone}>{WEEKLY_REVIEW.title}</NavItem>
+      <NavItem route="/lesson" dot={!lessonDone}>Today’s Lesson</NavItem>
 
+      <SectionLabel>Me</SectionLabel>
+      <NavItem route="/progress">Progress</NavItem>
+      <NavItem route="/support" dot={signals > 0}>
+        Where I need a hand{signals > 0 ? ` · ${signals}` : ''}
+      </NavItem>
+      <NavItem route="/concepts">All concepts</NavItem>
+
+      {/* Kept, but out of the way: the notebook's main job is lectures and practice. */}
       <div className="mt-3 border-t border-line pt-2">
-        <NavItem route="/concepts">All concepts</NavItem>
-        <NavItem route="/history">Prompt history</NavItem>
+        <button
+          aria-expanded={extrasOpen}
+          className="flex w-full items-center gap-1 rounded-lg px-2 py-1 text-left text-[11px] font-bold tracking-wide text-ink-soft uppercase hover:bg-paper-2"
+          onClick={() => setExtrasOpen(!extrasOpen)}
+        >
+          <span aria-hidden="true">{extrasOpen ? '▾' : '▸'}</span>
+          More
+        </button>
+        {extrasOpen && (
+          <>
+            {notebooks.map((n) => (
+              <NavItem key={n.id} route={`/notebook/${n.id}`} indent={8}>{n.name}</NavItem>
+            ))}
+            <button
+              className="rounded-lg px-2 py-1 pl-4 text-left text-[13px] font-bold text-turq-dark hover:bg-paper-2"
+              onClick={() => openNew()}
+            >
+              + New notebook
+            </button>
+            <NavItem route="/history" indent={8}>Prompt history</NavItem>
+          </>
+        )}
       </div>
     </aside>
   )
@@ -250,7 +326,6 @@ export function NotebookTitle() {
     <div className="flex items-center gap-2 text-[13px] font-bold text-ink">
       <Logo size={16} />
       ChangeNotes Notebook
-      <span className="rounded-full bg-navy px-2 py-px text-[10.5px] font-bold text-white">Premium</span>
     </div>
   )
 }

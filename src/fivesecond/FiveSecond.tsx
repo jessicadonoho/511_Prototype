@@ -7,39 +7,112 @@ import { FrozenContext } from '../lib/hooks'
 import { buildFixture, initialPersisted, setPersistPaused, useStore } from '../store/store'
 
 export const SCREENS: { id: string; label: string; shows: string }[] = [
-  { id: 'ide-review', label: 'IDE: review', shows: 'Right after the AI session: highlights, inline labels, Review panel, toast and Notebook dot.' },
-  { id: 'ide-hover', label: 'IDE: hover card', shows: 'The .get hover card, open.' },
-  { id: 'ide-question', label: 'IDE: question', shows: 'The comprehension question card (Q2) in focus.' },
-  { id: 'notebook-home', label: 'Notebook: Home', shows: 'Notebook Home, post-session.' },
+  { id: 'notebook-lecture', label: 'Notebook: lecture', shows: 'Today’s lecture notes with the practice panel docked beside them.' },
+  { id: 'practice-panel', label: 'Notebook: practice loop', shows: 'The practice panel part-way through a concept, at 1/3 with feedback on screen.' },
+  { id: 'notebook-home', label: 'Notebook: Home', shows: 'Notebook Home: today’s lecture, the weekly review and the support signals.' },
+  { id: 'review-prompt', label: 'Notebook: review prompt', shows: '“Would you like to review these concepts?” with the mastery ratings, before the assignment.' },
+  { id: 'ide-assignment', label: 'IDE: assignment', shows: 'The in-class assignment open in the editor, with the quiet ChangeNotes bar.' },
+  { id: 'ai-option-a', label: 'IDE: AI detected (A)', shows: 'Option A — clarifying questions in the editor as soon as AI code lands.' },
+  { id: 'ai-option-b', label: 'IDE: AI detected (B)', shows: 'Option B — clarifying questions at submission, with the grade on the line.' },
+  { id: 'weekly-review', label: 'Notebook: weekly review', shows: 'A weekly review question with the answer box and the “pasting is off” notice.' },
+  { id: 'professor-view', label: 'Professor: class view', shows: 'The aggregated view of where the class is struggling.' },
   { id: 'notebook-progress', label: 'Notebook: Progress', shows: 'The Progress page.' },
-  { id: 'notebook-lesson', label: 'Notebook: lesson', shows: 'A Today’s Lesson question screen.' },
-  { id: 'desktop-both', label: 'Desktop: both apps', shows: 'The IDE in front, with the Notebook partly visible behind it.' },
+  { id: 'ide-review', label: 'IDE: AI change review', shows: 'The editor’s AI-change review, now collapsed by default and opened here.' },
+  { id: 'desktop-both', label: 'Desktop: both apps', shows: 'The Notebook in front, with the editor partly visible behind it.' },
+]
+
+/** A frozen practice-panel conversation, so the screen shows the loop rather than an empty panel. */
+const PRACTICE_TURNS = [
+  {
+    id: 1,
+    role: 'coach' as const,
+    text: "Let's work on **Dictionaries: .get() with default**. Answer three of these correctly and we'll move on to the next concept in this lecture.",
+    at: 0,
+    instant: true,
+  },
+  {
+    id: 2,
+    role: 'question' as const,
+    text: 'The first time `maya` appears, what does `counts.get(user, 0)` return?',
+    questionId: 'lq-get-1',
+    at: 0,
+    instant: true,
+  },
+  { id: 3, role: 'student' as const, text: '1', questionId: 'lq-get-1', grade: 'near' as const, at: 0, instant: true },
+  {
+    id: 4,
+    role: 'coach' as const,
+    text: 'Close — `1` is what ends up *stored*, but the question is about what `.get` itself returns. It returns the default first, and the `+ 1` happens after. So what is the default here?',
+    questionId: 'lq-get-1',
+    grade: 'near' as const,
+    at: 0,
+    instant: true,
+  },
+  { id: 5, role: 'student' as const, text: '0', questionId: 'lq-get-1', grade: 'correct' as const, at: 0, instant: true },
+  {
+    id: 6,
+    role: 'coach' as const,
+    text: '`0` is right. `maya` is not in `counts` yet, so `.get` hands back the default you passed in. Then `0 + 1` stores `1`.',
+    questionId: 'lq-get-1',
+    grade: 'correct' as const,
+    at: 0,
+    instant: true,
+  },
+  {
+    id: 7,
+    role: 'question' as const,
+    text: 'Which dictionary method looks up a key without crashing when the key is missing?',
+    questionId: 'lq-get-2',
+    at: 0,
+    instant: true,
+  },
 ]
 
 function applyScreen(screen: string) {
   // Always use default settings here, so a facilitator's variant toggles can't change the frozen screens.
   const fixture = (name: Parameters<typeof buildFixture>[0], patch: object = {}) =>
-    useStore.setState({ ...buildFixture(name), jump: null, selection: null, newNotebook: null, ...patch })
+    useStore.setState({ ...buildFixture(name), jump: null, selection: null, newNotebook: null, clipFlash: null, ...patch })
+  const defaults = buildFixture('start').variants
   switch (screen) {
-    case 'ide-review':
-      return fixture('afterT1', { notebookDot: true })
-    case 'ide-hover':
-      return fixture('afterT1', { toast: false })
-    case 'ide-question':
-      return fixture('afterT1', {
-        toast: false,
-        questionIndex: 1,
-        answers: { q1: { choice: 1, correct: true, hintUsed: false } },
-        reviewed: { 1: true, 2: false, 3: false },
+    case 'notebook-lecture':
+      return fixture('lecture')
+    case 'practice-panel':
+      return fixture('lecture', {
+        practiceTurns: PRACTICE_TURNS,
+        practiceQuestionId: 'lq-get-2',
+        practiceAsked: ['lq-get-1', 'lq-get-2'],
+        reps: { dictget: 1 },
+        wrongStreak: { dictget: 0 },
       })
     case 'notebook-home':
-      return fixture('notebookPost', { notebookRoute: '/home' })
+      return fixture('lecture', { notebookRoute: '/home', practiceOpen: false, reps: { dictget: 2 } })
+    case 'review-prompt':
+      return fixture('lecture', { reviewPrompt: 'before' })
+    case 'ide-assignment':
+      return fixture('assignment')
+    case 'ai-option-a':
+      return fixture('aiDetected', { variants: { ...defaults, aiMode: 'A' }, clarifyOpen: true })
+    case 'ai-option-b':
+      return fixture('aiDetected', { variants: { ...defaults, aiMode: 'B' }, clarifyOpen: true })
+    case 'weekly-review':
+      return fixture('weekly', {
+        weeklyIndex: 0,
+        weeklyAnswers: { 'wr-get-hard': 'def count_checkouts(records):\n    counts = {}\n    for r in records:\n' },
+        pasteBlocked: 1,
+      })
+    case 'professor-view':
+      return fixture('weekly', { notebookRoute: '/professor', weeklyDone: true })
     case 'notebook-progress':
-      return fixture('notebookPost', { notebookRoute: '/progress' })
-    case 'notebook-lesson':
-      return fixture('notebookPost', { notebookRoute: '/lesson' })
+      return fixture('lecture', { notebookRoute: '/progress', practiceOpen: false })
+    case 'ide-review':
+      return fixture('legacyIde', { panelOpen: true, notebookDot: true })
     case 'desktop-both':
-      return fixture('afterT1', { toast: false, open: { ide: true, notebook: true }, frontApp: 'ide', notebookRoute: '/home' })
+      return fixture('assignment', {
+        open: { ide: true, notebook: true },
+        frontApp: 'notebook',
+        notebookRoute: '/home',
+        practiceOpen: false,
+      })
   }
 }
 

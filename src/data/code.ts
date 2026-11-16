@@ -109,7 +109,13 @@ export const FILE_TREE: WorkspaceFile[] = [
   { path: 'test_library.py', name: 'test_library.py', language: 'python' },
   { path: 'data/checkouts.csv', name: 'checkouts.csv', language: 'plaintext' },
   { path: 'README.md', name: 'README.md', language: 'markdown' },
+  // Appears in the Explorer once the student opens the assignment from their notebook.
+  { path: 'in_class_6.py', name: 'in_class_6.py', language: 'python' },
 ]
+
+/** Files the student can actually type in. Everything else is read-only in the prototype. */
+export const EDITABLE_FILES = ['in_class_6.py']
+export const isEditable = (path: string) => EDITABLE_FILES.includes(path)
 
 export const STATIC_FILES: Record<string, string> = {
   'test_library.py': `# test_library.py

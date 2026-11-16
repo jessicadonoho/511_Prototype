@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { AI_MODE_BLURB, AI_MODE_LABEL, type AiMode } from '../data/aiDetection'
 import { toggleFullscreen, useIsFullscreen } from '../lib/fullscreen'
 import { resetPrototype, startNextSession, useStore, type FixtureName, type LogEvent } from '../store/store'
 
@@ -19,10 +20,13 @@ export function isFacilitatorMode() {
 }
 
 const JUMPS: { id: FixtureName; label: string }[] = [
-  { id: 'start', label: 'Start' },
-  { id: 'afterT1', label: 'After T1' },
-  { id: 'afterT4', label: 'After T4' },
-  { id: 'notebookPost', label: 'Notebook post-session' },
+  { id: 'start', label: 'Start (onboarding)' },
+  { id: 'lecture', label: 'On the lecture' },
+  { id: 'assignment', label: 'Assignment open' },
+  { id: 'aiDetected', label: 'AI detected' },
+  { id: 'afterSubmit', label: 'After submit' },
+  { id: 'weekly', label: 'Weekly review' },
+  { id: 'legacyIde', label: 'Editor AI review' },
 ]
 
 function download(filename: string, content: string, type: string) {
@@ -50,6 +54,7 @@ export function FacilitatorPanel() {
   const variants = useStore((s) => s.variants)
   const setVariant = useStore((s) => s.setVariant)
   const jumpToState = useStore((s) => s.jumpToState)
+  const restartOnboarding = useStore((s) => s.restartOnboarding)
   const eventCount = useStore((s) => s.events.length)
   const isFull = useIsFullscreen()
 
@@ -131,6 +136,22 @@ export function FacilitatorPanel() {
 
           <div className="flex flex-col gap-1">
             <div className="text-[#c5ccd8]">Variants</div>
+            {/* Flow step 5: which AI-detection option this participant sees. */}
+            <label className="flex items-center justify-between gap-1">
+              AI detection
+              <select
+                value={variants.aiMode}
+                onChange={(e) => setVariant('aiMode', e.target.value as AiMode)}
+                className="min-w-0 flex-1 rounded border border-[#666] bg-[#1f2937] px-1"
+              >
+                {(['A', 'B'] as AiMode[]).map((m) => (
+                  <option key={m} value={m}>
+                    {AI_MODE_LABEL[m]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="text-[10.5px] leading-snug text-[#9aa3b2]">{AI_MODE_BLURB[variants.aiMode]}</p>
             <label className="flex items-center justify-between">
               Question card
               <select
@@ -163,6 +184,7 @@ export function FacilitatorPanel() {
           <div className="flex flex-wrap gap-1 border-t border-[#444] pt-2">
             <button className={buttonClass} onClick={toggleFullscreen}>{isFull ? 'Exit full screen' : 'Full screen'}</button>
             <Link to="/five-second" className={buttonClass}>Five-second</Link>
+            <button className={buttonClass} onClick={restartOnboarding}>Replay onboarding</button>
           </div>
 
           <button

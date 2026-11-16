@@ -3,8 +3,10 @@ import { Logo } from '../components/common'
 import { AGENTS, CHANGES, type AgentId } from '../data/changes'
 import { buildLibrary, FILE_TREE, type ChangeId } from '../data/code'
 import { useViewport } from '../lib/hooks'
+import { ASSIGNMENT } from '../data/assignment'
 import { isReviewComplete, logEvent, unreviewedCount, useStore, type SidebarView } from '../store/store'
 import { ChangeNotesPanel } from './ChangeNotesPanel'
+import { ClarifyCard } from './ClarifyCard'
 import { EditorArea } from './EditorArea'
 
 export function IdeApp() {
@@ -89,6 +91,8 @@ export function IdeApp() {
         )}
       </div>
       <StatusBar />
+      {/* At the window level, so Option B's overlay covers the whole editor rather than one pane. */}
+      <ClarifyCard />
     </div>
   )
 }
@@ -212,9 +216,15 @@ function FileRow({ path, name, indent, badge }: { path: string; name: string; in
 
 function Explorer() {
   const phase = useStore((s) => s.phase)
+  const assignmentOpened = useStore((s) => s.assignmentOpened)
+  const submitted = useStore((s) => s.assignmentSubmitted)
   return (
     <div>
       <div className="flex h-[22px] items-center px-2 text-[11.5px] font-bold text-vs-text uppercase">▾ library-tracker</div>
+      {/* The assignment file arrives when the student opens it from their notebook. */}
+      {assignmentOpened && (
+        <FileRow path={ASSIGNMENT.path} name={ASSIGNMENT.path} indent={22} badge={submitted ? '✓' : 'U'} />
+      )}
       <FileRow path="library.py" name="library.py" indent={22} badge={phase === 'done' ? 'M' : undefined} />
       <FileRow path="test_library.py" name="test_library.py" indent={22} />
       <div className="flex h-[22px] items-center pl-[14px] text-[12.5px] text-vs-text">▾ data</div>
@@ -458,6 +468,10 @@ function StatusBar() {
   const sidebarView = useStore((s) => s.sidebarView)
   const sidebarOpen = useStore((s) => s.sidebarOpen)
   const openNotebook = useStore((s) => s.openNotebook)
+  const assignmentOpened = useStore((s) => s.assignmentOpened)
+  const assignmentSubmitted = useStore((s) => s.assignmentSubmitted)
+  const aiDetected = useStore((s) => s.aiDetected)
+  const clarifyDone = useStore((s) => s.clarifyDone)
   const remaining = unreviewedCount({ reviewed })
   const done = phase === 'done'
 
@@ -468,6 +482,10 @@ function StatusBar() {
       ? 'ChangeNotes: reviewed ✓'
       : `ChangeNotes: ${remaining} ${remaining === 1 ? 'change' : 'changes'} to review`
   }
+  // The assignment and AI detection outrank the old review state in the new flow.
+  if (assignmentOpened && !assignmentSubmitted) label = `ChangeNotes: ${ASSIGNMENT.code} open`
+  if (assignmentSubmitted) label = `ChangeNotes: ${ASSIGNMENT.code} submitted ✓`
+  if (aiDetected && !clarifyDone) label = 'ChangeNotes: ◆ AI code flagged'
 
   const dead = (target: string) => () => logEvent('dead_click', { target })
 

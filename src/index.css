@@ -230,3 +230,32 @@ button:disabled {
   caret-color: transparent !important;
 }
 .frozen { pointer-events: none; user-select: none; }
+
+/* ---------- Iteration 2: a quieter editor integration (Theme 5) ---------- */
+/* The inline label sits back until you reach for it, so the notebook stays the loud surface. */
+.cn-lens {
+  opacity: 0.55;
+  transition: opacity 120ms ease-out;
+}
+.cn-lens:hover,
+.cn-lens:focus-within {
+  opacity: 1;
+}
+.cn-lens b {
+  color: #7fbfb8;
+  font-weight: 500;
+}
+.cn-line-added { background: rgba(115, 201, 145, 0.07); }
+.cn-line-assumption { background: rgba(226, 185, 61, 0.09); }
+
+/* The notebook entry point in the editor: present, not shouting. */
+.cn-quiet-link {
+  color: #9fdcd5;
+  text-decoration: underline;
+  text-decoration-color: rgba(159, 220, 213, 0.35);
+  text-underline-offset: 2px;
+}
+.cn-quiet-link:hover {
+  color: #fff;
+  text-decoration-color: #fff;
+}

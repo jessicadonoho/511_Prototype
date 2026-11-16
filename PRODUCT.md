@@ -1,14 +1,20 @@
 # ChangeNotes — Clickable Prototype Spec
 
+> ⚠️ **This file is the iteration 1 spec, kept for reference.** Iteration 2 changed the strategy:
+> **students are the only customer segment**, the **notebook is the primary surface**, and the
+> editor integration is secondary. What iteration 2 added or moved is described in
+> [`changenotes-iteration-2.md`](./changenotes-iteration-2.md) and summarised in the
+> [README](./README.md). Where the two disagree, iteration 2 wins.
+>
 > **Who this is for:** Claude Code (CLI). Build the prototype described below.
-> **Who it's for after that:** Team #5 "Sticky Note" (SI 511, Fall 2026), who will use it for **moderated task-based usability testing** and **five-second tests** with students and early-career developers.
+> **Who it's for after that:** Team #5 "Sticky Note" (SI 511, Fall 2026), who will use it for **moderated task-based usability testing** and **five-second tests** with students.
 > **Tagline:** *Learn while you vibe code.* · *From working code to understood code.*
 
 ----
 
 ## 1. Context (read this first)
 
-ChangeNotes is an IDE extension plus a companion notebook app for students and junior developers who code with AI agents. Our research found:
+ChangeNotes is a notebook app for students learning to program, plus a companion IDE extension. (Iteration 1 framed this the other way round, and included junior developers; iteration 2 dropped that segment — see the banner above.) Our research found:
 
 - AI code can **look right and still be wrong**, and only people with strong fundamentals catch it (4 of 5 interviewees).
 - Learners **lower the bar for "understanding"**. They ship working code they can't explain.

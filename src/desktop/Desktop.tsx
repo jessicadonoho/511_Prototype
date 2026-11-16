@@ -4,6 +4,7 @@ import { IdeApp, IdeMenus } from '../ide/IdeApp'
 import { fullscreenSupported, toggleFullscreen, useIsFullscreen } from '../lib/fullscreen'
 import { useFrozen } from '../lib/hooks'
 import { NotebookApp, NotebookTitle } from '../notebook/NotebookApp'
+import { Onboarding } from '../onboarding/Onboarding'
 import { useStore, type AppId } from '../store/store'
 
 export const DOCK_HEIGHT = 48
@@ -168,6 +169,11 @@ function Dock() {
 }
 
 export function Desktop({ layout = 'normal' }: { layout?: 'normal' | 'both' }) {
+  const onboarded = useStore((s) => s.onboarded)
+  const frozen = useFrozen()
+  // Five-second screens show a frozen moment, so onboarding never interrupts them.
+  const showOnboarding = !onboarded && !frozen
+
   return (
     <div className="absolute inset-0 overflow-hidden bg-gradient-to-br from-[#4a5266] via-[#3d4557] to-[#2f3646]">
       <AppWindow
@@ -188,6 +194,7 @@ export function Desktop({ layout = 'normal' }: { layout?: 'normal' | 'both' }) {
         <IdeApp />
       </AppWindow>
       <Dock />
+      {showOnboarding && <Onboarding />}
     </div>
   )
 }

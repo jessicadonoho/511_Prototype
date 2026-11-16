@@ -2,7 +2,10 @@ import { DiffEditor, Editor, type OnMount } from '@monaco-editor/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Logo } from '../components/common'
 import { CHANGES } from '../data/changes'
-import { buildLibrary, EDIT_FRAMES, FILE_TREE, LIBRARY_BEFORE, STATIC_FILES, type ChangeId } from '../data/code'
+import { buildLibrary, EDIT_FRAMES, FILE_TREE, LIBRARY_BEFORE, STATIC_FILES, isEditable, type ChangeId } from '../data/code'
+import { ASSIGNMENT } from '../data/assignment'
+import { conceptForCode, conceptsInCode } from '../data/conceptMatch'
+import { conceptById, findItem } from '../data/courses'
 import { useFrozen } from '../lib/hooks'
 import { useStore } from '../store/store'
 import { hoverTracker, monaco, tokenAt } from './monacoSetup'
@@ -35,8 +38,11 @@ function languageFor(path: string) {
   return FILE_TREE.find((f) => f.path === path)?.language ?? 'plaintext'
 }
 
-function fileContent(path: string, libraryCode: string) {
-  return path === 'library.py' ? libraryCode : (STATIC_FILES[path] ?? '')
+function fileContent(path: string, libraryCode: string, edits: Record<string, string>) {
+  if (path === 'library.py') return libraryCode
+  if (edits[path] !== undefined) return edits[path]
+  if (path === ASSIGNMENT.path) return ASSIGNMENT.starterCode
+  return STATIC_FILES[path] ?? ''
 }
 
 export function EditorArea() {
@@ -51,10 +57,13 @@ export function EditorArea() {
   const setActiveFile = useStore((s) => s.setActiveFile)
   const closeTab = useStore((s) => s.closeTab)
   const setShowDiff = useStore((s) => s.setShowDiff)
+  const fileEdits = useStore((s) => s.fileEdits)
+  const setFileContent = useStore((s) => s.setFileContent)
 
   const [editor, setEditor] = useState<CodeEditor | null>(null)
   const [contentWidth, setContentWidth] = useState(600)
   const [selectionButton, setSelectionButton] = useState<{ top: number; left: number } | null>(null)
+  const [addedFlash, setAddedFlash] = useState<string | null>(null)
   const decorations = useRef<monaco.editor.IEditorDecorationsCollection | null>(null)
   const flash = useRef<monaco.editor.IEditorDecorationsCollection | null>(null)
   const zoneIds = useRef<string[]>([])
@@ -139,17 +148,50 @@ export function EditorArea() {
         })
       }),
     ]
+    // A burst of pasted lines in a file the student is writing is our AI-usage signal (flow step 5).
+    subs.push(
+      editor.onDidPaste((e) => {
+        const model = editor.getModel()
+        const path = store().activeFile
+        if (!model || !isEditable(path)) return
+        const pasted = model.getValueInRange(e.range)
+        const lines = e.range.endLineNumber - e.range.startLineNumber + 1
+        if (lines >= 4 || pasted.length > 160) store().detectAi('paste')
+      }),
+    )
+
     setContentWidth(editor.getLayoutInfo().contentWidth)
-    const action = editor.addAction({
-      id: 'changenotes.askSelection',
-      label: 'Ask ChangeNotes',
-      contextMenuGroupId: 'navigation',
-      contextMenuOrder: 0,
-      run: () => askSelection(),
-    })
+    const actions = [
+      editor.addAction({
+        id: 'changenotes.askSelection',
+        label: 'Ask ChangeNotes',
+        contextMenuGroupId: 'navigation',
+        contextMenuOrder: 0,
+        run: () => askSelection(),
+      }),
+      editor.addAction({
+        id: 'changenotes.addToNotebook',
+        label: 'Add to notebook',
+        contextMenuGroupId: 'navigation',
+        contextMenuOrder: 1,
+        run: () => addSelectionToNotebook(),
+      }),
+      editor.addAction({
+        id: 'changenotes.openNotes',
+        label: 'Open the notes for this concept',
+        contextMenuGroupId: 'navigation',
+        contextMenuOrder: 2,
+        run: (ed) => {
+          const model = ed.getModel()
+          const line = ed.getPosition()?.lineNumber ?? 1
+          const hint = model ? conceptForCode(model.getLineContent(line)) : null
+          store().openNotesForConcept(hint?.conceptId ?? ASSIGNMENT.conceptIds[0], 'editor_context_menu')
+        },
+      }),
+    ]
     return () => {
       subs.forEach((s) => s.dispose())
-      action.dispose()
+      actions.forEach((a) => a.dispose())
     }
   }, [editor])
 
@@ -307,11 +349,37 @@ export function EditorArea() {
 
   // Monaco hover cards also open from the keyboard: Cmd/Ctrl+K Cmd/Ctrl+I is built in.
 
+  useEffect(() => {
+    if (!addedFlash) return
+    // Long enough that the "Open it" link is still there when someone reaches for it.
+    const t = setTimeout(() => setAddedFlash(null), 7000)
+    return () => clearTimeout(t)
+  }, [addedFlash])
+
   const askSelection = () => {
     const s = useStore.getState()
     s.setPanel(true, 'ask')
     s.setDraft('')
     setSelectionButton(null)
+  }
+
+  /** Theme 5: send the selected lines to the lecture that taught the concept they use. */
+  const addSelectionToNotebook = () => {
+    const s = useStore.getState()
+    const sel = s.selection
+    if (!sel) return
+    const hint = conceptForCode(sel.text) ?? conceptForCode(s.activeFile === ASSIGNMENT.path ? '.get(' : '')
+    const conceptId = hint?.conceptId ?? ASSIGNMENT.conceptIds[0]
+    const concept = conceptById(conceptId)
+    s.addClip({
+      code: sel.text.replace(/\s+$/, ''),
+      conceptId,
+      itemId: concept?.itemId ?? ASSIGNMENT.itemId,
+      file: s.activeFile,
+      lines: sel.start === sel.end ? String(sel.start) : `${sel.start}–${sel.end}`,
+    })
+    setSelectionButton(null)
+    setAddedFlash(concept?.name ?? 'your notebook')
   }
 
   const tabName = (path: string) => FILE_TREE.find((f) => f.path === path)?.name ?? path
@@ -355,6 +423,8 @@ export function EditorArea() {
       <div className="flex h-[22px] shrink-0 items-center px-3 text-[11.5px] text-vs-dim">
         library-tracker › {activeFile.split('/').join(' › ')}
       </div>
+      {activeFile === ASSIGNMENT.path && <AssignmentBar />}
+      {activeFile !== ASSIGNMENT.path && <NotesStrip code={fileContent(activeFile, library.code, fileEdits)} />}
       <div className="relative min-h-0 flex-1">
         {inDiff ? (
           <DiffEditor
@@ -382,25 +452,133 @@ export function EditorArea() {
           <Editor
             path={activeFile}
             language={languageFor(activeFile)}
-            value={fileContent(activeFile, library.code)}
+            value={fileContent(activeFile, library.code, fileEdits)}
             theme="changenotes-dark"
-            options={BASE_OPTIONS}
+            options={{ ...BASE_OPTIONS, readOnly: !isEditable(activeFile) }}
             onMount={handleMount}
+            onChange={(value) => {
+              if (isEditable(activeFile) && value !== undefined) setFileContent(activeFile, value)
+            }}
             keepCurrentModel
             loading={<span className="text-xs text-vs-dim">Loading editor…</span>}
           />
         )}
         {selectionButton && !inDiff && (
-          <button
-            className="absolute z-20 flex items-center gap-1.5 rounded border border-turq bg-navy px-2 py-1 text-[11.5px] text-white shadow-lg hover:bg-[#2a3a5e]"
+          <div
+            className="absolute z-20 flex items-center gap-1"
             style={{ top: selectionButton.top, left: selectionButton.left }}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={askSelection}
           >
-            <Logo size={12} /> Ask ChangeNotes
-          </button>
+            <button
+              className="flex items-center gap-1.5 rounded border border-turq bg-navy px-2 py-1 text-[11.5px] text-white shadow-lg hover:bg-[#2a3a5e]"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={askSelection}
+            >
+              <Logo size={12} /> Ask ChangeNotes
+            </button>
+            <button
+              className="flex items-center gap-1.5 rounded border border-vs-line bg-[#2d2d30] px-2 py-1 text-[11.5px] text-vs-text shadow-lg hover:border-turq hover:text-white"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={addSelectionToNotebook}
+              title="Send these lines to the lecture that covers them"
+            >
+              Add to notebook ↗
+            </button>
+          </div>
+        )}
+        {addedFlash && (
+          <div
+            role="status"
+            className="toast-enter absolute bottom-3 left-1/2 z-30 -translate-x-1/2 rounded border border-turq bg-[#252526] px-3 py-1.5 text-[12px] text-white shadow-xl"
+          >
+            Added to your notebook under <strong className="text-turq">{addedFlash}</strong>.{' '}
+            <button
+              className="cn-quiet-link"
+              onClick={() => {
+                useStore.getState().openNotebook('ide_notes')
+                setAddedFlash(null)
+              }}
+            >
+              Open it ↗
+            </button>
+          </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Theme 5: the assignment's own slim bar. It carries the submit button and a quiet way back to
+ * the notes for the concepts this assignment uses — the entry point for a student who is stuck.
+ */
+function AssignmentBar() {
+  const submitted = useStore((s) => s.assignmentSubmitted)
+  const aiDetected = useStore((s) => s.aiDetected)
+  const clarifyDone = useStore((s) => s.clarifyDone)
+  const mode = useStore((s) => s.variants.aiMode)
+  const submit = useStore((s) => s.submitAssignment)
+  const openNotes = useStore((s) => s.openNotesForConcept)
+  const found = findItem(ASSIGNMENT.itemId)
+
+  return (
+    <div className="flex h-[26px] shrink-0 items-center gap-2 border-b border-vs-line bg-[#252526] px-3 text-[11.5px] whitespace-nowrap">
+      <Logo size={12} />
+      <span className="text-vs-text">
+        {ASSIGNMENT.code} · {ASSIGNMENT.title}
+      </span>
+      <span className="text-vs-dim max-[1120px]:hidden">due {ASSIGNMENT.due.toLowerCase()}</span>
+      {aiDetected && (
+        <span
+          className="text-diff-warn"
+          title={clarifyDone ? 'AI-written code, explained' : 'AI-written code, not explained yet'}
+        >
+          ◆ {clarifyDone ? 'AI code explained' : 'AI code flagged'}
+        </span>
+      )}
+      <span className="flex-1" />
+      <span className="text-vs-dim max-[1180px]:hidden">
+        {found ? `${found.item.code} notes:` : 'Notes:'}
+      </span>
+      {ASSIGNMENT.conceptIds.map((id, i) => (
+        <span key={id} className="flex items-center gap-2">
+          {i > 0 && <span className="text-vs-line">·</span>}
+          <button className="cn-quiet-link" onClick={() => openNotes(id, 'assignment_bar')}>
+            {conceptById(id)?.name}
+          </button>
+        </span>
+      ))}
+      {submitted ? (
+        <span className="ml-1 font-semibold text-diff-add">✓ Submitted</span>
+      ) : (
+        <button
+          className="ml-1 rounded bg-turq px-2 py-0.5 font-semibold text-navy hover:bg-[#4fd4c8]"
+          onClick={submit}
+          title={mode === 'B' ? 'ChangeNotes may ask you to explain flagged code first' : undefined}
+        >
+          Submit
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** The same quiet entry point for ordinary files: whatever concepts the open file touches. */
+function NotesStrip({ code }: { code: string }) {
+  const openNotes = useStore((s) => s.openNotesForConcept)
+  const hints = conceptsInCode(code).slice(0, 3)
+  if (hints.length === 0) return null
+  return (
+    <div className="flex h-[22px] shrink-0 items-center gap-2 border-b border-vs-line/60 px-3 text-[11px] whitespace-nowrap text-vs-dim">
+      <Logo size={11} />
+      <span className="max-[1120px]:hidden">In your notes:</span>
+      {hints.map((hint, i) => (
+        <span key={hint.conceptId} className="flex items-center gap-2">
+          {i > 0 && <span className="text-vs-line">·</span>}
+          <button className="cn-quiet-link" onClick={() => openNotes(hint.conceptId, 'notes_strip')}>
+            {hint.label}
+          </button>
+        </span>
+      ))}
     </div>
   )
 }
